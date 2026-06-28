@@ -197,6 +197,14 @@ def cmd_show(args) -> int:
     return 0
 
 
+def cmd_serve(args) -> int:
+    cfg = ChannelConfig.load(args.config)
+    from .web.app import serve  # lazy: only needs the 'web' extra here
+    print(f"Serving dashboard for '{cfg.name}' at http://{args.host}:{args.port}")
+    serve(cfg, host=args.host, port=args.port)
+    return 0
+
+
 def cmd_tick(args) -> int:
     _, pipe = _load(args)
     published = pipe.process_due(time.time())
@@ -268,6 +276,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("tick", help="publish scheduled projects now due")
     sp.set_defaults(func=cmd_tick)
+
+    sp = sub.add_parser("serve", help="launch the web dashboard")
+    sp.add_argument("--host", default="127.0.0.1")
+    sp.add_argument("--port", type=int, default=8000)
+    sp.set_defaults(func=cmd_serve)
 
     return p
 

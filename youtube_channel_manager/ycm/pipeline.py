@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Callable, Optional
 
 from .config import ChannelConfig
 from .models import ProjectStatus, VideoProject, status_reached
@@ -25,11 +26,15 @@ log = logging.getLogger("ycm.pipeline")
 
 
 class Pipeline:
-    def __init__(self, cfg: ChannelConfig, store: ProjectStore | None = None) -> None:
+    def __init__(self, cfg: ChannelConfig, store: ProjectStore | None = None,
+                 on_status: Optional[Callable[[VideoProject, ProjectStatus], None]] = None) -> None:
         self.cfg = cfg
         self.style = PacingStyle.from_config(cfg.style)
         self.workspace = cfg.workspace
         self.store = store or ProjectStore(self.workspace / "ycm.db")
+        # Optional hook fired after each stage persists; used by the web UI to
+        # stream live progress. Failures in the callback are ignored.
+        self.on_status = on_status
 
     # ----------------------------------------------------------------- assets
     def _project_dir(self, project: VideoProject) -> Path:
@@ -41,6 +46,11 @@ class Pipeline:
         project.status = status
         self.store.save(project)
         log.info("project %s -> %s", project.id, status.value)
+        if self.on_status is not None:
+            try:
+                self.on_status(project, status)
+            except Exception:  # noqa: BLE001 - progress hook must never break a run
+                log.debug("on_status hook raised", exc_info=True)
 
     # ------------------------------------------------------------------ stages
     def stage_script(self, project: VideoProject) -> None:

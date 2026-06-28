@@ -63,6 +63,32 @@ python -m ycm tick
 Installed as a package (`pip install -e .`) the same commands are available as
 the `ycm` console script.
 
+### Web dashboard
+
+There's also a browser dashboard (FastAPI + a single-page frontend) for driving
+the whole thing visually — brainstorm topics, start a production run and watch
+**live per-stage progress**, preview the script/scene timing/visuals, play the
+narration, and publish or schedule.
+
+```bash
+pip install '.[web]'        # FastAPI + uvicorn
+python -m ycm serve         # then open http://127.0.0.1:8000
+```
+
+The dashboard talks to a small REST API (also usable on its own):
+
+| Method & path | Purpose |
+|---------------|---------|
+| `GET /api/config` | channel + style + active providers |
+| `GET /api/ideas?count=N` | brainstorm topics |
+| `GET /api/projects` | list projects |
+| `GET /api/projects/{id}` | full project (script, scenes, media URLs) |
+| `POST /api/projects` | start a production run -> `{job_id}` |
+| `GET /api/jobs/{id}` | live job status + stage events |
+| `POST /api/projects/{id}/publish` | publish/schedule |
+| `POST /api/tick` | publish anything now due |
+| `GET /api/projects/{id}/media/{audio\|visual}/{n}` | per-scene media |
+
 ### What lands on disk
 
 Each run writes a self-contained project folder under `workspace/projects/<id>/`:
@@ -110,6 +136,10 @@ ycm/
     base.py          abstract interfaces (LLM/TTS/Image/Video/Publisher)
     llm.py  tts.py  image.py  video.py  publisher.py   mock + real backends
     registry.py      maps config names -> implementations
+  web/
+    app.py           FastAPI app + REST API
+    jobs.py          background production runs with live progress
+    static/          single-page dashboard
 tests/               pytest suite (offline, no network)
 ```
 

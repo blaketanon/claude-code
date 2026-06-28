@@ -19,11 +19,17 @@ youtube = [
     "google-api-python-client>=2.0",
     "google-auth-oauthlib>=1.0",
 ]
+web = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+]
 all = [
     "anthropic>=0.40",
     "pyttsx3>=2.90",
     "google-api-python-client>=2.0",
     "google-auth-oauthlib>=1.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
 ]
 
 [project.scripts]
@@ -31,6 +37,9 @@ ycm = "ycm.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["ycm*"]
+
+[tool.setuptools.package-data]
+ycm = ["web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
