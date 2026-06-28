@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "youtube-channel-manager"
+version = "0.1.0"
+description = "Automated production & publishing of calm, slow-paced 90s/2000s-style kids' videos"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["youtube", "kids", "video", "automation", "tts", "pipeline"]
+dependencies = []  # core runs on the standard library alone
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40"]
+tts = ["pyttsx3>=2.90"]
+youtube = [
+    "google-api-python-client>=2.0",
+    "google-auth-oauthlib>=1.0",
+]
+all = [
+    "anthropic>=0.40",
+    "pyttsx3>=2.90",
+    "google-api-python-client>=2.0",
+    "google-auth-oauthlib>=1.0",
+]
+
+[project.scripts]
+ycm = "ycm.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["ycm*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,35 @@
+# YouTube Channel Manager configuration (sample / starting point).
+# Copy or edit this; `ycm init` can regenerate it.
+
+[channel]
+name = "Slow & Gentle Kids"
+niche = "gentle educational stories for young children"
+target_audience = "children ages 3-7"
+language = "en"
+workspace_dir = "workspace"
+
+# The slow, 90s/2000s pacing house style. Tune to taste.
+[style]
+words_per_minute = 110      # calm, unhurried narration (vs ~160 for typical YT)
+min_scene_seconds = 8       # always hold a scene at least this long
+max_scene_seconds = 22
+tail_pause_seconds = 1.5    # quiet beat after narration before transitioning
+transition_kind = "crossfade"
+transition_seconds = 1.5    # slow, gentle transitions instead of hard cuts
+target_minutes = 6
+
+# Providers. Defaults are offline mocks so the system runs with zero API keys.
+[providers.llm]
+provider = "mock"           # or "anthropic" (set ANTHROPIC_API_KEY in .env)
+
+[providers.tts]
+provider = "mock"           # or "pyttsx3"
+
+[providers.image]
+provider = "mock"
+
+[providers.video]
+provider = "mock"           # or "ffmpeg" (requires the ffmpeg binary on PATH)
+
+[providers.publisher]
+provider = "mock"           # or "youtube" (requires OAuth client_secret.json)
