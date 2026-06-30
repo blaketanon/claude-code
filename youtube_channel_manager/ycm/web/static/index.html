@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YouTube Channel Manager</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --panel: #fffdf8; --ink: #3a3a3a; --muted: #8a8275;
+    --accent: #6c9a8b; --accent-dark: #4f786b; --line: #e4ded1; --warn: #c98a5b;
+    --radius: 14px; --shadow: 0 1px 3px rgba(0,0,0,.06), 0 6px 18px rgba(0,0,0,.05);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Georgia, "Iowan Old Style", serif; color: var(--ink);
+         background: var(--bg); line-height: 1.5; }
+  header { padding: 18px 26px; background: linear-gradient(180deg,#cfe2db,#bcd4cb);
+           border-bottom: 1px solid var(--line); display: flex; align-items: baseline;
+           gap: 14px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 22px; letter-spacing: .2px; }
+  header .tag { color: var(--accent-dark); font-style: italic; font-size: 14px; }
+  .badges { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge { font-family: system-ui, sans-serif; font-size: 11px; background: #ffffffaa;
+           border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px;
+           color: var(--muted); }
+  .layout { display: grid; grid-template-columns: 340px 1fr; gap: 22px; padding: 22px;
+            max-width: 1180px; margin: 0 auto; align-items: start; }
+  .panel { background: var(--panel); border: 1px solid var(--line);
+           border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; }
+  .panel h2 { margin: 0 0 12px; font-size: 15px; text-transform: uppercase;
+              letter-spacing: 1px; color: var(--muted); font-family: system-ui, sans-serif; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px;
+          font-family: system-ui, sans-serif; }
+  input, select { width: 100%; padding: 9px 11px; border: 1px solid var(--line);
+                  border-radius: 9px; background: #fff; font: inherit; color: var(--ink); }
+  button { font: inherit; font-family: system-ui, sans-serif; cursor: pointer;
+           border: none; border-radius: 9px; padding: 9px 14px; background: var(--accent);
+           color: #fff; transition: background .15s; }
+  button:hover { background: var(--accent-dark); }
+  button.ghost { background: #fff; color: var(--accent-dark); border: 1px solid var(--accent); }
+  button.ghost:hover { background: #f0f6f3; }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row.tight { gap: 6px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; font-family: system-ui, sans-serif; }
+  ul.projects { list-style: none; margin: 14px 0 0; padding: 0; max-height: 60vh; overflow:auto; }
+  ul.projects li { padding: 10px 12px; border-radius: 10px; cursor: pointer;
+                   border: 1px solid transparent; }
+  ul.projects li:hover { background: #f3efe6; }
+  ul.projects li.active { background: #eaf2ee; border-color: var(--accent); }
+  .status { display: inline-block; font-family: system-ui, sans-serif; font-size: 11px;
+            padding: 1px 8px; border-radius: 999px; background: #efe9dc; color: var(--muted); }
+  .status.published { background: #d9ebe0; color: var(--accent-dark); }
+  .status.scheduled { background: #f2e6d4; color: var(--warn); }
+  .status.failed { background: #f3d9d4; color: #b4503f; }
+  .pipeline { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 0;
+              font-family: system-ui, sans-serif; font-size: 11px; }
+  .step { padding: 3px 9px; border-radius: 999px; background: #efe9dc; color: var(--muted); }
+  .step.done { background: var(--accent); color: #fff; }
+  .step.cur { background: var(--warn); color: #fff; }
+  .scene { display: grid; grid-template-columns: 220px 1fr; gap: 16px; padding: 16px 0;
+           border-top: 1px solid var(--line); align-items: start; }
+  .scene img { width: 100%; border-radius: 10px; border: 1px solid var(--line); display:block; }
+  .scene .meta { font-family: system-ui, sans-serif; font-size: 12px; color: var(--muted);
+                 margin-bottom: 6px; }
+  .scene audio { width: 100%; margin-top: 8px; }
+  .empty { color: var(--muted); font-style: italic; padding: 30px 0; text-align: center; }
+  .ideas li { cursor: pointer; padding: 6px 8px; border-radius: 8px; font-size: 14px; }
+  .ideas li:hover { background: #f3efe6; }
+  .err { color: #b4503f; font-family: system-ui, sans-serif; font-size: 13px; }
+  a { color: var(--accent-dark); }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="chname">Channel</h1>
+  <span class="tag">slow &amp; gentle · attention-span friendly</span>
+  <div class="badges" id="badges"></div>
+</header>
+
+<div class="layout">
+  <!-- Left column -->
+  <div>
+    <div class="panel">
+      <h2>New video</h2>
+      <label for="topic">Topic</label>
+      <input id="topic" placeholder="The Quiet Pond and Its Friends">
+      <label for="when">Publish</label>
+      <select id="when">
+        <option value="">Don't publish (produce only)</option>
+        <option value="now">Publish now</option>
+        <option value="+1h">Schedule in 1 hour</option>
+        <option value="+1d">Schedule tomorrow</option>
+        <option value="+7d">Schedule in 1 week</option>
+      </select>
+      <div class="row" style="margin-top:14px;">
+        <button id="create">Produce</button>
+        <button class="ghost" id="suggest">Suggest topics</button>
+      </div>
+      <div id="job"></div>
+      <ul class="ideas" id="ideas"></ul>
+    </div>
+
+    <div class="panel" style="margin-top:18px;">
+      <h2>Projects</h2>
+      <div class="row tight small">
+        <button class="ghost" id="refresh">Refresh</button>
+        <button class="ghost" id="tick">Run due schedule</button>
+      </div>
+      <ul class="projects" id="projects"></ul>
+    </div>
+  </div>
+
+  <!-- Right column -->
+  <div class="panel" id="detail">
+    <div class="empty">Select a project, or produce a new one to get started.</div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const STAGES = ["created","scripted","narrated","visuals_ready","assembled","scheduled","published"];
+const api = async (url, opts) => {
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error((await r.json().catch(()=>({detail:r.statusText}))).detail || r.statusText);
+  return r.json();
+};
+
+let activeId = null;
+
+async function loadConfig() {
+  const c = await api("/api/config");
+  $("chname").textContent = c.channel.name;
+  $("badges").innerHTML = Object.entries(c.providers)
+    .map(([k,v]) => `<span class="badge">${k}: ${v}</span>`).join("");
+}
+
+async function loadProjects() {
+  const list = await api("/api/projects");
+  const ul = $("projects");
+  if (!list.length) { ul.innerHTML = `<li class="muted small">No projects yet.</li>`; return; }
+  ul.innerHTML = list.map(p => `
+    <li data-id="${p.id}" class="${p.id===activeId?'active':''}">
+      <div>${escapeHtml(p.title)}</div>
+      <div class="row tight" style="margin-top:4px;">
+        <span class="status ${p.status}">${p.status}</span>
+        ${p.runtime ? `<span class="small muted">${(p.runtime/60).toFixed(1)} min</span>` : ""}
+      </div>
+    </li>`).join("");
+  ul.querySelectorAll("li[data-id]").forEach(li =>
+    li.onclick = () => showProject(li.dataset.id));
+}
+
+async function showProject(id) {
+  activeId = id;
+  await loadProjects();
+  const p = await api(`/api/projects/${id}`);
+  const s = p.script;
+  const pub = p.publish || {};
+  const pipeline = STAGES.map(st => {
+    const reached = STAGES.indexOf(st) <= STAGES.indexOf(p.status);
+    const cur = st === p.status;
+    return `<span class="step ${cur?'cur':reached?'done':''}">${st.replace('_',' ')}</span>`;
+  }).join("");
+  let html = `
+    <div class="row" style="justify-content:space-between;">
+      <h2 style="margin:0;">${escapeHtml(s ? s.title : p.topic)}</h2>
+      <span class="status ${p.status}">${p.status}</span>
+    </div>
+    <div class="pipeline">${pipeline}</div>`;
+  if (p.error) html += `<p class="err">${escapeHtml(p.error)}</p>`;
+  if (s) {
+    html += `<p class="muted small">${escapeHtml(s.description)}</p>
+      <p class="small">${s.scenes.length} scenes · ${(s.total_duration_seconds/60).toFixed(1)} min ·
+      ${s.word_count} words</p>`;
+    html += `<div class="row" style="margin:12px 0;">
+        ${pub.status==='draft'||!pub.status ? `
+          <button data-act="publish" data-at="">Publish now</button>
+          <button class="ghost" data-act="publish" data-at="+1d">Schedule tomorrow</button>`
+        : `<span class="small">Published/scheduled:
+            ${pub.url ? `<a href="${pub.url}" target="_blank">${pub.url}</a>` : pub.status}</span>`}
+      </div>`;
+    html += s.scenes.map(sc => `
+      <div class="scene">
+        <div>${sc.visual_url ? `<img src="${sc.visual_url}" alt="scene ${sc.index+1}">`
+                             : `<div class="empty small">no visual</div>`}</div>
+        <div>
+          <div class="meta">Scene ${sc.index+1} · holds ${sc.duration_seconds.toFixed(1)}s ·
+            ${sc.transition.kind} ${sc.transition.duration_seconds.toFixed(1)}s</div>
+          <div>${escapeHtml(sc.narration)}</div>
+          <div class="meta" style="margin-top:6px;">visual: ${escapeHtml(sc.visual_prompt)}</div>
+          ${sc.audio_url ? `<audio controls preload="none" src="${sc.audio_url}"></audio>` : ""}
+        </div>
+      </div>`).join("");
+  } else {
+    html += `<p class="empty">Script not generated yet.</p>`;
+  }
+  $("detail").innerHTML = html;
+  $("detail").querySelectorAll("[data-act=publish]").forEach(b =>
+    b.onclick = () => publish(id, b.dataset.at));
+}
+
+async function publish(id, at) {
+  await api(`/api/projects/${id}/publish`, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({privacy: "private", at: at || null}),
+  });
+  await showProject(id);
+}
+
+async function createProject() {
+  const topic = $("topic").value.trim();
+  if (!topic) { $("topic").focus(); return; }
+  const when = $("when").value;
+  $("create").disabled = true;
+  $("job").innerHTML = `<p class="small muted">Starting…</p>`;
+  try {
+    const body = {topic, publish: when === "now",
+                  at: (when && when !== "now") ? when : null};
+    const {job_id} = await api("/api/projects", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
+    });
+    pollJob(job_id);
+  } catch (e) {
+    $("job").innerHTML = `<p class="err">${escapeHtml(e.message)}</p>`;
+    $("create").disabled = false;
+  }
+}
+
+async function pollJob(jobId) {
+  const job = await api(`/api/jobs/${jobId}`);
+  const last = job.events.length ? job.events[job.events.length-1].stage : "starting";
+  const steps = STAGES.map(st => {
+    const reached = job.events.some(e => e.stage === st);
+    return `<span class="step ${st===last?'cur':reached?'done':''}">${st.replace('_',' ')}</span>`;
+  }).join("");
+  $("job").innerHTML = `<div class="pipeline" style="margin-top:12px;">${steps}</div>`;
+  if (job.project_id && job.status !== "running") activeId = job.project_id;
+  if (job.status === "running") { setTimeout(() => pollJob(jobId), 600); return; }
+  $("create").disabled = false;
+  if (job.status === "error") {
+    $("job").innerHTML += `<p class="err">${escapeHtml(job.error)}</p>`;
+  } else {
+    $("job").innerHTML += `<p class="small muted">Done.</p>`;
+    $("topic").value = "";
+  }
+  await loadProjects();
+  if (job.project_id) showProject(job.project_id);
+}
+
+async function suggest() {
+  const ideas = await api("/api/ideas?count=6");
+  $("ideas").innerHTML = ideas.map(i =>
+    `<li data-topic="${escapeHtml(i.topic)}">💡 ${escapeHtml(i.topic)}</li>`).join("");
+  $("ideas").querySelectorAll("li").forEach(li =>
+    li.onclick = () => { $("topic").value = li.dataset.topic; $("ideas").innerHTML = ""; });
+}
+
+function escapeHtml(s) {
+  return (s||"").replace(/[&<>"']/g, c =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+$("create").onclick = createProject;
+$("suggest").onclick = suggest;
+$("refresh").onclick = loadProjects;
+$("tick").onclick = async () => { await api("/api/tick", {method:"POST"}); loadProjects(); };
+
+loadConfig();
+loadProjects();
+</script>
+</body>
+</html>
