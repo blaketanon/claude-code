@@ -114,9 +114,9 @@ dependency or credential is missing.
 | Slot | Mock (default) | Real option | Install / configure |
 |------|----------------|-------------|---------------------|
 | `llm` | deterministic script writer | `anthropic` (Claude) | `pip install '.[anthropic]'`, set `ANTHROPIC_API_KEY` in `.env` |
-| `tts` | valid placeholder WAV | `pyttsx3` (offline voice) | `pip install '.[tts]'` |
+| `tts` | valid placeholder WAV | `espeak` (offline real speech) · `pyttsx3` | install `espeak-ng` · `pip install '.[tts]'` |
 | `image` | pastel SVG cards | *(add your own)* | implement `ImageProvider` |
-| `video` | render plan (JSON + EDL) | `ffmpeg` | install the `ffmpeg` binary |
+| `video` | render plan (JSON + EDL) | `ffmpeg` (true crossfade render) | install `ffmpeg`; SVG visuals also need `rsvg-convert` (librsvg) |
 | `publisher` | local upload ledger | `youtube` | `pip install '.[youtube]'`, add OAuth `client_secret.json` |
 
 Secrets go in `.env` (gitignored) or real environment variables — never in

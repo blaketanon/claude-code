@@ -9,7 +9,9 @@ optional ``pyttsx3`` engine.
 from __future__ import annotations
 
 import math
+import shutil
 import struct
+import subprocess
 import wave
 from pathlib import Path
 
@@ -52,6 +54,44 @@ class MockTTS(TTSProvider):
                 frames += struct.pack("<h", sample)
             wav.writeframes(bytes(frames))
         return round(n_frames / self.sample_rate, 3)
+
+
+class EspeakTTS(TTSProvider):
+    """Real, fully-offline speech via the ``espeak-ng`` binary.
+
+    Robotic but genuine narration — no API key, no network. The slow default
+    speaking rate (``words_per_minute``) matches the calm house style.
+    """
+
+    def __init__(self, words_per_minute: int = 120, voice: str = "en",
+                 pitch: int = 45, **_: object) -> None:
+        self.wpm = int(words_per_minute)
+        self.voice = voice
+        self.pitch = int(pitch)
+
+    @staticmethod
+    def _bin() -> str:
+        exe = shutil.which("espeak-ng") or shutil.which("espeak")
+        if not exe:
+            raise RuntimeError(
+                "EspeakTTS needs the 'espeak-ng' binary. Install it (e.g. "
+                "apt-get install espeak-ng), or use providers.tts = 'mock'."
+            )
+        return exe
+
+    def synthesize(self, *, text: str, out_path: str, target_seconds: float) -> float:
+        exe = self._bin()
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            [exe, "-v", self.voice, "-s", str(self.wpm), "-p", str(self.pitch),
+             "-w", out_path, text],
+            check=True, capture_output=True,
+        )
+        try:
+            with wave.open(out_path) as wav:
+                return round(wav.getnframes() / wav.getframerate(), 3)
+        except Exception:
+            return float(target_seconds)
 
 
 class PyttsxTTS(TTSProvider):

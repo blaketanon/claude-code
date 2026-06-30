@@ -21,7 +21,8 @@ from .base import (
 )
 
 _LLM = {"mock": llm_mod.MockLLM, "anthropic": llm_mod.AnthropicLLM}
-_TTS = {"mock": tts_mod.MockTTS, "pyttsx3": tts_mod.PyttsxTTS}
+_TTS = {"mock": tts_mod.MockTTS, "espeak": tts_mod.EspeakTTS,
+        "pyttsx3": tts_mod.PyttsxTTS}
 _IMAGE = {"mock": image_mod.MockImage}
 _VIDEO = {"mock": video_mod.MockVideo, "ffmpeg": video_mod.FFmpegVideo}
 _PUBLISHER = {"mock": pub_mod.MockPublisher, "youtube": pub_mod.YouTubePublisher}
