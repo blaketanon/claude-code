@@ -1,0 +1,123 @@
+# The systems map: everything the investigator may read. It is rendered into Claude's
+# instructions, so the descriptions matter — write what each system does for the business
+# and how it connects to Salesforce. Keep `enabled: false` on repos that are retired.
+#
+# Fields per repo: name (owner/repo), path (folder under the workspace), description,
+# runtime (where it runs: eb|lambda|ecs|ec2|salesforce|external), logs (CloudWatch log
+# groups), salesforce_touchpoints (how it talks to Salesforce), enabled.
+
+salesforce:
+  description: >
+    The system of record. Deals (Opportunities), merchants (Accounts), ISOs, offers, stips,
+    underwriting decisions, collections and funding all live here. Automation runs as Flows,
+    Process Builders, Apex triggers, validation rules and scheduled Apex. Integrations call in
+    through the REST API and out through Named Credentials / outbound messages.
+  metadata_path: salesforce            # retrieved org metadata lands in <workspace>/salesforce
+  org_alias: trace
+  # If Salesforce metadata is also kept in a git repo, list it under repos too.
+
+repos:
+  - name: FundingMetrics/brokerd
+    path: brokerd
+    description: BrokerBox / broker-facing API and services.
+    runtime: eb
+    enabled: true
+  - name: FundingMetrics/fundrone
+    path: fundrone
+    description: Funding automation service.
+    runtime: eb
+    enabled: true
+  - name: FundingMetrics/exsight
+    path: exsight
+    description: Analytics / insight service.
+    runtime: eb
+    enabled: true
+  - name: FundingMetrics/FM_Model8
+    path: FM_Model8
+    description: Current underwriting / scoring model (Model 8). Decisions it returns show up on Salesforce Opportunities.
+    runtime: eb
+    enabled: true
+  - name: FundingMetrics/model7_api
+    path: model7_api
+    description: Previous scoring model API (Model 7); still referenced by some deals.
+    runtime: eb
+    enabled: true
+  - name: FundingMetrics/fm_bankanalysis
+    path: fm_bankanalysis
+    description: Bank statement analysis (gero-bank-analyzer).
+    runtime: eb
+    enabled: true
+  - name: FundingMetrics/FM_AutoBank
+    path: FM_AutoBank
+    description: Automated bank data retrieval.
+    runtime: eb
+    enabled: true
+  - name: FundingMetrics/FM_Collection_Model
+    path: FM_Collection_Model
+    description: Collections risk model.
+    runtime: eb
+    enabled: true
+  - name: FundingMetrics/gerofundai
+    path: gerofundai
+    description: Gero AI services (geroai.fund).
+    runtime: eb
+    enabled: true
+  - name: FundingMetrics/gero-ui-deploy
+    path: gero-ui-deploy
+    description: Gero UI deployment.
+    runtime: eb
+    enabled: true
+  - name: FundingMetrics/iso_portal_api
+    path: iso_portal_api
+    description: ISO portal backend.
+    runtime: eb
+    enabled: true
+  - name: FundingMetrics/iso_portal
+    path: iso_portal
+    description: ISO portal frontend.
+    runtime: external
+    enabled: true
+  - name: FundingMetrics/merchant_portal_api
+    path: merchant_portal_api
+    description: Merchant portal backend.
+    runtime: eb
+    enabled: true
+  - name: FundingMetrics/looker-salesforce
+    path: looker-salesforce
+    description: Looker models over Salesforce data (reporting only).
+    runtime: external
+    enabled: true
+  - name: FundingMetrics/competitor-funding-project
+    path: competitor-funding-project
+    description: Competitor funding analysis.
+    runtime: eb
+    enabled: true
+  - name: FundingMetrics/bankscrub.com
+    path: bankscrub.com
+    description: BankScrub site.
+    runtime: eb
+    enabled: false
+  - name: FundingMetrics/claude-change-log
+    path: claude-change-log
+    description: Gero DevLog — the engineering change log. Use its API/data to see what was deployed and when.
+    runtime: eb
+    logs: [/aws/elasticbeanstalk/Gero-DevLog/var/log/web.stdout.log]
+    enabled: true
+  - name: FundingMetrics/change-log
+    path: change-log
+    description: Older change log entries (git history of deployments).
+    runtime: external
+    enabled: true
+
+aws:
+  account: "807547241110"
+  region: us-east-1
+  description: >
+    Most services run on Elastic Beanstalk (Python 3.12 / Amazon Linux 2023) with logs streamed to
+    CloudWatch under /aws/elasticbeanstalk/<Environment>/… ; some run as Lambda functions. Use
+    `aws elasticbeanstalk describe-environments` to map an app to its environment and
+    `aws logs filter-log-events` / `aws logs tail` to read what happened at the time in question.
+
+change_log:
+  url: https://devlog.geroai.fund
+  description: Gero DevLog lists every deployment and system change with dates. Check it when timing matters.

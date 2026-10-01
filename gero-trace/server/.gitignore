@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+instance/
+.env
+.elasticbeanstalk/
+workspace/
+*.pyc

@@ -1,0 +1,132 @@
+<template>
+    <lightning-card title={title} icon-name="utility:einstein">
+        <div class="slds-p-horizontal_medium slds-p-bottom_medium">
+
+            <!-- Ask -->
+            <template lwc:if={showAskForm}>
+                <lightning-textarea
+                    label="What do you want to know?"
+                    placeholder={placeholder}
+                    value={question}
+                    onchange={handleQuestion}
+                    max-length="20000"
+                    disabled={busy}
+                    class="question">
+                </lightning-textarea>
+                <p class="slds-text-body_small slds-text-color_weak slds-m-top_xx-small">
+                    Claude reads this record's history, the automation and code behind it, and the system logs. Answers usually take 1–5 minutes.
+                </p>
+                <div class="slds-m-top_small slds-grid slds-grid_align-spread">
+                    <lightning-button variant="brand" label="Ask Claude" onclick={handleAsk} disabled={askDisabled}></lightning-button>
+                    <template lwc:if={history.length}>
+                        <lightning-button variant="base" label={historyLabel} onclick={toggleHistory}></lightning-button>
+                    </template>
+                </div>
+            </template>
+
+            <!-- Running -->
+            <template lwc:if={isRunning}>
+                <div class="slds-box slds-theme_shade slds-m-top_small running">
+                    <div class="slds-grid slds-grid_vertical-align-center">
+                        <lightning-spinner alternative-text="Working" size="small" variant="brand" class="spinner"></lightning-spinner>
+                        <div class="slds-m-left_x-large">
+                            <p class="slds-text-heading_small">Claude is investigating…</p>
+                            <p class="slds-text-body_small slds-text-color_weak">{current.progress}</p>
+                            <p class="slds-text-body_small slds-m-top_xx-small">{elapsedLabel} · You can leave this page; the answer is saved on {current.name}.</p>
+                        </div>
+                    </div>
+                </div>
+                <p class="slds-m-top_x-small slds-text-body_small"><b>Question:</b> {current.question}</p>
+            </template>
+
+            <!-- Answer -->
+            <template lwc:if={isAnswered}>
+                <div class="slds-m-top_small answer">
+                    <div class="slds-grid slds-grid_vertical-align-center slds-m-bottom_x-small">
+                        <span class="slds-text-title_caps slds-text-color_weak">Answer</span>
+                        <lightning-badge label={confidenceLabel} class={confidenceClass}></lightning-badge>
+                        <template lwc:if={current.needsFix}>
+                            <lightning-badge label="Likely needs an engineering fix" class="slds-m-left_x-small badge-fix"></lightning-badge>
+                        </template>
+                    </div>
+                    <p class="slds-text-body_small slds-m-bottom_x-small"><b>You asked:</b> {current.question}</p>
+                    <lightning-formatted-rich-text value={current.answerHtml} class="rich"></lightning-formatted-rich-text>
+                    <template lwc:if={current.error}>
+                        <p class="slds-text-color_weak slds-text-body_small slds-m-top_x-small">{current.error}</p>
+                    </template>
+                </div>
+
+                <!-- Report -->
+                <template lwc:if={canReport}>
+                    <div class="slds-m-top_medium slds-box slds-box_x-small report">
+                        <template lwc:if={showReportForm}>
+                            <lightning-textarea
+                                label="Anything to add for engineering? (optional)"
+                                placeholder="e.g. This blocked two fundings today. Happened on three other deals this week."
+                                value={comment}
+                                onchange={handleComment}
+                                disabled={busy}>
+                            </lightning-textarea>
+                            <div class="slds-m-top_x-small">
+                                <lightning-button variant="destructive-text" label="Send to engineering" onclick={handleReport} disabled={busy}></lightning-button>
+                                <lightning-button variant="base" label="Cancel" onclick={toggleReportForm} class="slds-m-left_x-small"></lightning-button>
+                            </div>
+                        </template>
+                        <template lwc:else>
+                            <p class="slds-text-body_small">Not right, or something engineering should fix?</p>
+                            <lightning-button variant="neutral" label="Report this to engineering" icon-name="utility:bug" onclick={toggleReportForm} class="slds-m-top_xx-small"></lightning-button>
+                        </template>
+                    </div>
+                </template>
+
+                <template lwc:if={isReported}>
+                    <div class="slds-m-top_medium slds-box slds-box_x-small slds-theme_success-light reported">
+                        <p class="slds-text-body_small">
+                            <lightning-icon icon-name="utility:check" size="xx-small" class="slds-m-right_xx-small"></lightning-icon>
+                            Reported to engineering as
+                            <a href={current.issueUrl} target="_blank" rel="noopener">issue #{current.issueNumber}</a>.
+                            <template lwc:if={fixLabel}> {fixLabel}</template>
+                            <template lwc:if={current.fixPrUrl}> <a href={current.fixPrUrl} target="_blank" rel="noopener">View the proposed fix</a>.</template>
+                        </p>
+                    </div>
+                </template>
+
+                <div class="slds-m-top_small slds-grid slds-grid_align-spread">
+                    <lightning-button variant="base" label="Ask another question" onclick={handleNew}></lightning-button>
+                    <template lwc:if={history.length}>
+                        <lightning-button variant="base" label={historyLabel} onclick={toggleHistory}></lightning-button>
+                    </template>
+                </div>
+            </template>
+
+            <!-- Failed -->
+            <template lwc:if={isFailed}>
+                <div class="slds-m-top_small slds-box slds-box_x-small slds-theme_error-light">
+                    <p class="slds-text-body_small"><b>Claude could not finish this one.</b> {current.error}</p>
+                    <lightning-button variant="base" label="Try again" onclick={handleRetry} class="slds-m-top_xx-small"></lightning-button>
+                </div>
+            </template>
+
+            <!-- History -->
+            <template lwc:if={showHistory}>
+                <div class="slds-m-top_medium history">
+                    <p class="slds-text-title_caps slds-text-color_weak slds-m-bottom_x-small">Previous questions</p>
+                    <ul class="slds-has-dividers_bottom-space">
+                        <template for:each={history} for:item="h">
+                            <li key={h.investigationId} class="slds-item">
+                                <a data-id={h.investigationId} onclick={handleOpenHistory}>{h.question}</a>
+                                <span class="slds-text-body_small slds-text-color_weak slds-m-left_x-small">
+                                    {h.status} · <lightning-formatted-date-time value={h.createdDate} year="numeric" month="short" day="numeric" hour="2-digit" minute="2-digit"></lightning-formatted-date-time> · {h.createdByName}
+                                </span>
+                            </li>
+                        </template>
+                    </ul>
+                </div>
+            </template>
+
+            <template lwc:if={errorMessage}>
+                <div class="slds-m-top_small slds-text-color_error slds-text-body_small">{errorMessage}</div>
+            </template>
+        </div>
+    </lightning-card>
+</template>

@@ -1,0 +1,2 @@
+web: gunicorn --bind :8000 --workers 2 --threads 4 --preload --timeout 120 --access-logfile - application:application
+worker: python -m gero_trace.worker

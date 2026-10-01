@@ -1,0 +1,6 @@
+.venv/
+instance/
+.env
+workspace/
+tests/
+__pycache__/

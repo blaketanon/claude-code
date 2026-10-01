@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Claude Investigation</label>
+    <pluralLabel>Claude Investigations</pluralLabel>
+    <description>A question a user asked Claude about something that happened in Salesforce or a connected system, the answer Claude found, and (optionally) the engineering issue it was reported as.</description>
+    <nameField>
+        <label>Investigation #</label>
+        <type>AutoNumber</type>
+        <displayFormat>INV-{00000}</displayFormat>
+    </nameField>
+    <deploymentStatus>Deployed</deploymentStatus>
+    <sharingModel>ReadWrite</sharingModel>
+    <enableActivities>false</enableActivities>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>true</enableHistory>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableBulkApi>true</enableBulkApi>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <externalSharingModel>Private</externalSharingModel>
+</CustomObject>

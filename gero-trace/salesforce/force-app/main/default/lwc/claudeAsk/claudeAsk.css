@@ -1,0 +1,9 @@
+.running { position: relative; min-height: 4.5rem; }
+.spinner { position: relative; }
+.rich { display: block; line-height: 1.45; }
+.badge-high { background: #2e844a; color: #fff; }
+.badge-medium { background: #dd7a01; color: #fff; }
+.badge-low { background: #747474; color: #fff; }
+.badge-fix { background: #ba0517; color: #fff; }
+.history a { cursor: pointer; }
+.report { background: #fafaf9; }

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Claude Trace User</label>
+    <description>Can ask Claude why something happened, see answers, and report them to engineering.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <classAccesses><apexClass>ClaudeTraceController</apexClass><enabled>true</enabled></classAccesses>
+    <classAccesses><apexClass>ClaudeTraceService</apexClass><enabled>true</enabled></classAccesses>
+    <externalCredentialPrincipalAccesses>
+        <enabled>true</enabled>
+        <externalCredentialPrincipal>Gero_Trace-Service</externalCredentialPrincipal>
+    </externalCredentialPrincipalAccesses>
+    <objectPermissions>
+        <object>Claude_Investigation__c</object>
+        <allowCreate>true</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Question__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Answer__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Answer_Rich__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Report__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Job_Id__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Record_Id__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Record_Object__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Status__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Confidence__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Issue_URL__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Issue_Number__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Fix_PR_URL__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Fix_Status__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Cost_USD__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Error__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Reporter_Comment__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <fieldPermissions><field>Claude_Investigation__c.Needs_Fix__c</field><editable>true</editable><readable>true</readable></fieldPermissions>
+    <tabSettings><tab>Claude_Investigation__c</tab><visibility>Visible</visibility></tabSettings>
+</PermissionSet>

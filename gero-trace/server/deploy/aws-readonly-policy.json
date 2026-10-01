@@ -1,0 +1,28 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadLogs",
+      "Effect": "Allow",
+      "Action": ["logs:DescribeLogGroups", "logs:DescribeLogStreams", "logs:FilterLogEvents", "logs:GetLogEvents",
+                 "logs:StartQuery", "logs:StopQuery", "logs:GetQueryResults", "logs:DescribeQueries", "logs:StartLiveTail"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DescribeInfrastructure",
+      "Effect": "Allow",
+      "Action": ["elasticbeanstalk:Describe*", "elasticbeanstalk:List*", "elasticbeanstalk:RequestEnvironmentInfo", "elasticbeanstalk:RetrieveEnvironmentInfo",
+                 "lambda:Get*", "lambda:List*", "ecs:Describe*", "ecs:List*", "rds:Describe*", "ec2:Describe*",
+                 "cloudwatch:Get*", "cloudwatch:List*", "cloudwatch:Describe*", "cloudtrail:LookupEvents",
+                 "sqs:GetQueueAttributes", "sqs:ListQueues", "events:Describe*", "events:List*", "states:Describe*", "states:List*", "states:GetExecutionHistory",
+                 "s3:ListAllMyBuckets", "s3:ListBucket", "sts:GetCallerIdentity"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadApplicationData",
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:BatchGetItem", "dynamodb:Query", "dynamodb:Scan", "dynamodb:DescribeTable", "dynamodb:ListTables"],
+      "Resource": "*"
+    }
+  ]
+}

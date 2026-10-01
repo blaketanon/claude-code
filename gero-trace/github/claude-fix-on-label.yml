@@ -1,0 +1,51 @@
+# OPTIONAL alternative to the service's built-in fixer.
+#
+# Drop this file into .github/workflows/ of a repository that Gero Trace files issues for. When someone adds the
+# `approved-for-fix` label to an issue in THAT repository, Claude Code runs inside GitHub Actions, implements the
+# fix described in the issue body (the engineering report) and opens a pull request.
+#
+# The built-in fixer (server/gero_trace/fixer.py) does the same thing centrally for every repo in systems.yaml and
+# needs no per-repo setup, so most teams will not need this. Use it when you prefer the work to run inside GitHub
+# with its own audit trail, or for a repo the service should not have write access to.
+#
+# Secrets needed: ANTHROPIC_API_KEY (or set use_bedrock: "true" and configure AWS credentials).
+name: Claude fix on approval
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  fix:
+    if: github.event.label.name == 'approved-for-fix' && contains(github.event.issue.labels.*.name, 'claude-report')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Implement the approved fix
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch_prefix: "claude/fix-"
+          prompt: |
+            An engineering report (below) was approved for an automated fix. Implement the smallest correct change in
+            this repository, following its conventions, add or update tests where the project has them, and run the
+            existing test and lint commands. Do not change deployment configuration, credentials or third-party
+            endpoints. When done, create a pull request (as a draft) whose description summarises what changed, the
+            commands you ran and their result, the risk, and how to roll back. Reference issue #${{ github.event.issue.number }}.
+
+            If the fix cannot be made from this repository, make no changes and comment on the issue explaining why.
+
+            ISSUE #${{ github.event.issue.number }}: ${{ github.event.issue.title }}
+
+            ${{ github.event.issue.body }}
+          claude_args: |
+            --allowedTools "Read,Edit,Write,MultiEdit,Grep,Glob,Bash(git:*),Bash(npm:*),Bash(pytest:*),Bash(python:*),Bash(pip:*),Bash(make:*),Bash(gh pr create:*),Bash(gh issue comment:*)"
+            --max-turns 120
