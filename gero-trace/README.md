@@ -59,6 +59,21 @@ a draft pull request.
 Budgets: `INVESTIGATION_BUDGET_USD` (default $8) and `INVESTIGATION_MAX_TURNS` (80) cap each investigation;
 `FIX_BUDGET_USD` ($15) / `FIX_MAX_TURNS` (120) cap each fix. Costs are recorded per investigation.
 
+## Build it (one command)
+
+From a machine with the FundingMetrics tooling (`aws` + `eb` with account credentials, `sf` logged in to the org, `gh` signed in):
+
+```bash
+git fetch origin claude/salesforce-claude-troubleshooting-hv9zdz && git checkout claude/salesforce-claude-troubleshooting-hv9zdz
+ADMIN_PASSWORD='…' ANTHROPIC_API_KEY=sk-ant-… GITHUB_TOKEN=ghp_… SF_ORG=<org alias> bash gero-trace/bootstrap.sh
+```
+
+[`bootstrap.sh`](bootstrap.sh) creates the issues repo and labels, the Elastic Beanstalk environment with Postgres, HTTPS and
+DNS, attaches the read-only IAM policy, adds the GitHub webhooks, deploys the Salesforce project with its tests and assigns
+you the permission set. It ends by printing the two steps only a person can do in Salesforce Setup (the External Credential
+API key, and the Connected App for read-only org access). Steps are re-runnable; `STEPS="salesforce"` runs one.
+The manual equivalent follows.
+
 ## Setup
 
 ### 1. Server on AWS (≈ 20 minutes, mostly waiting for RDS)
