@@ -2,11 +2,11 @@ import express from "express";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs/promises";
-import { PORT, ROOT, DATA_DIR, MAX_UPLOAD_MB, features } from "./config.js";
+import { PORT, ROOT, DATA_DIR, MAX_UPLOAD_MB, DEMO_MODE, features, llm as llmConfig, voice as voiceConfig } from "./config.js";
 import * as store from "./store.js";
 import { runPipeline, initialSteps } from "./pipeline.js";
-import * as claude from "./providers/claude.js";
-import * as eleven from "./providers/elevenlabs.js";
+import * as llm from "./providers/llm.js";
+import * as voice from "./providers/voice.js";
 import * as did from "./providers/did.js";
 import * as demo from "./providers/demo.js";
 import { extractPortrait } from "./media.js";
@@ -115,7 +115,7 @@ app.post("/api/avatars/:id/retrain", wrap(async (req, res) => {
   const avatar = await store.getAvatar(req.params.id);
   if (!avatar) return res.status(404).json({ error: "Avatar not found" });
   if (avatar.status === "processing") return res.status(409).json({ error: "Already processing" });
-  if (avatar.voiceId && features.voice) await eleven.deleteVoice(avatar.voiceId).catch(() => {});
+  if (avatar.voiceId && features.voice) await voice.deleteVoice(avatar.voiceId).catch(() => {});
   if (typeof req.body?.notes === "string") avatar.notes = req.body.notes.trim().slice(0, 4000);
   await store.saveAvatar({ ...avatar, voiceId: null, status: "queued", steps: initialSteps() });
   runPipeline(avatar.id);
@@ -125,9 +125,9 @@ app.post("/api/avatars/:id/retrain", wrap(async (req, res) => {
 app.delete("/api/avatars/:id", wrap(async (req, res) => {
   const avatar = await store.getAvatar(req.params.id);
   if (!avatar) return res.status(404).json({ error: "Avatar not found" });
-  // Remove the cloned voice from ElevenLabs too, not just our local copy.
+  // Remove the reference clip from the voice server too, not just our local copy.
   if (avatar.voiceId && features.voice) {
-    await eleven.deleteVoice(avatar.voiceId).catch((err) => console.warn("voice delete failed:", err.message));
+    await voice.deleteVoice(avatar.voiceId).catch((err) => console.warn("voice delete failed:", err.message));
   }
   await store.deleteAvatar(avatar.id);
   res.json({ ok: true });
@@ -140,7 +140,7 @@ app.post("/api/avatars/:id/chat", wrap(async (req, res) => {
   const { mode = "chat" } = req.body || {};
   let history;
   try {
-    history = claude.sanitizeHistory(req.body?.history);
+    history = llm.sanitizeHistory(req.body?.history);
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
@@ -156,8 +156,8 @@ app.post("/api/avatars/:id/chat", wrap(async (req, res) => {
 
   try {
     const onText = (text) => send({ type: "text", text });
-    const text = features.claude
-      ? await claude.streamReply({ systemPrompt: avatar.systemPrompt, history, mode, onText, signal: abort.signal })
+    const text = features.llm
+      ? await llm.streamReply({ systemPrompt: avatar.systemPrompt, history, mode, onText, signal: abort.signal })
       : await demo.demoReply({ name: avatar.name, history, onText });
     send({ type: "done", text });
   } catch (err) {
@@ -173,8 +173,8 @@ app.post("/api/avatars/:id/chat", wrap(async (req, res) => {
 app.post("/api/transcribe", upload.single("audio"), wrap(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No audio uploaded" });
   try {
-    if (!features.voice) return res.status(501).json({ error: "Server speech-to-text needs ELEVENLABS_API_KEY; use typed input or browser dictation." });
-    const text = await eleven.transcribe(req.file.path, req.file.mimetype);
+    if (!features.voice) return res.status(501).json({ error: "Voice server is not reachable; use typed input or browser dictation." });
+    const text = await voice.transcribe(req.file.path, req.file.mimetype);
     res.json({ text });
   } finally {
     await fs.rm(req.file.path, { force: true });
@@ -193,7 +193,7 @@ app.post("/api/avatars/:id/speak", wrap(async (req, res) => {
   const mediaDir = path.join(store.avatarDir(avatar.id), "media");
   const clipId = store.newId();
   const audioName = `say-${clipId}.mp3`;
-  await fs.writeFile(path.join(mediaDir, audioName), await eleven.speak(avatar.voiceId, text));
+  await fs.writeFile(path.join(mediaDir, audioName), await voice.speak(avatar.voiceId, text));
   const audioUrl = `/media/${avatar.id}/${audioName}`;
 
   let videoUrl = null;
@@ -240,9 +240,19 @@ for (const a of await store.listAvatars()) {
   }
 }
 
-app.listen(PORT, () => {
-  console.log(`Avatar Studio running at http://localhost:${PORT}`);
-  console.log(
-    `  Claude: ${features.claude ? "on" : "DEMO"} | Voice (ElevenLabs): ${features.voice ? "on" : "off"} | Video (D-ID): ${features.video ? "on" : "off"}`,
-  );
-});
+// Probe the self-hosted backends; re-probe so they can be started after the app.
+async function refreshFeatures() {
+  const before = JSON.stringify(features);
+  const up = (p) => (DEMO_MODE ? Promise.resolve(false) : p().catch(() => false));
+  [features.llm, features.voice] = await Promise.all([up(llm.ping), up(voice.ping)]);
+  if (JSON.stringify(features) !== before) {
+    console.log(
+      `  LLM (${llmConfig.model} @ ${llmConfig.baseUrl}): ${features.llm ? "on" : "DEMO"} | ` +
+        `Voice (${voiceConfig.baseUrl}): ${features.voice ? "on" : "off"} | Video (D-ID): ${features.video ? "on" : "off"}`,
+    );
+  }
+}
+await refreshFeatures();
+setInterval(refreshFeatures, 30_000).unref();
+
+app.listen(PORT, () => console.log(`Avatar Studio running at http://localhost:${PORT}`));

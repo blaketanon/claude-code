@@ -1,0 +1,44 @@
+# Fully self-hosted stack: app + Ollama (LLM) + voice server (faster-whisper + Chatterbox).
+#   docker compose up -d
+#   docker compose exec ollama ollama pull llama3.1:8b
+# GPU: needs the NVIDIA Container Toolkit. On a CPU-only host, delete the `deploy:` blocks (it will be slow).
+services:
+  app:
+    build: .
+    ports: ["3000:3000"]
+    environment:
+      LLM_BASE_URL: http://ollama:11434/v1
+      LLM_MODEL: ${LLM_MODEL:-llama3.1:8b}
+      VOICE_SERVER_URL: http://voice:8000
+      VOICE_SERVER_API_KEY: ${VOICE_SERVER_API_KEY:-}
+      DID_API_KEY: ${DID_API_KEY:-}
+    volumes: [app-data:/data]
+    depends_on: [ollama, voice]
+
+  ollama:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_CONTEXT_LENGTH: "16384" # room for the persona + transcript in the system prompt
+    volumes: [ollama:/root/.ollama]
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+
+  voice:
+    build: ./voice-server
+    environment:
+      STT_MODEL: ${STT_MODEL:-small}
+      VOICE_SERVER_API_KEY: ${VOICE_SERVER_API_KEY:-}
+      PRELOAD: "1"
+    volumes: [voice-data:/data, voice-models:/models]
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+
+volumes:
+  app-data:
+  ollama:
+  voice-data:
+  voice-models:

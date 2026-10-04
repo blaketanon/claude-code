@@ -211,7 +211,8 @@ async function renderAvatar(id) {
   async function converse(text, mode) {
     inflight?.abort();
     const ctrl = (inflight = new AbortController());
-    history.push({ role: "user", content: text });
+    const turn = { role: "user", content: text };
+    history.push(turn);
     saveHistory();
     addMsg("user", text);
     const div = addMsg("assistant", "…");
@@ -231,8 +232,9 @@ async function renderAvatar(id) {
     } catch (err) {
       div.remove();
       if (err.name !== "AbortError") addMsg("error", err.message);
-      // keep history valid: drop the unanswered user turn
-      if (history.at(-1)?.role === "user") { history.pop(); saveHistory(); }
+      // keep history valid: drop this unanswered user turn (a newer turn may already follow it)
+      const i = history.lastIndexOf(turn);
+      if (i >= 0) { history.splice(i, 1); saveHistory(); }
       return null;
     }
   }
@@ -269,7 +271,7 @@ async function renderAvatar(id) {
   }
 
   /** Play cloned-voice audio, lip-synced video, or browser TTS - whichever is available. */
-  async function speakAndPlay(text, { video }) {
+  async function speakAndPlay(text, { video, isCurrent = () => true }) {
     stopPlayback();
     callStatus.textContent = video && config.features.video ? "Rendering video…" : "Generating voice…";
     let result = { audioUrl: null, videoUrl: null };
@@ -278,6 +280,7 @@ async function renderAvatar(id) {
     } catch (err) {
       console.warn("speak failed, falling back to browser voice", err);
     }
+    if (!isCurrent()) return; // the user spoke again while this was rendering
     callStatus.textContent = result.videoError ? "Video failed - voice only" : "";
     stage.classList.add("speaking");
     try {
@@ -349,29 +352,27 @@ async function renderAvatar(id) {
   const camBtn = $(".camera", root);
   const selfview = $(".selfview", root);
   const callComposer = $(".call-composer", root);
-  let micStream, camStream, recorder, chunks = [], recognition, inCall = false, busy = false;
+  let micStream, camStream, recorder, chunks = [], recognition, inCall = false, turnSeq = 0;
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   const useServerStt = () => config.features.voice;
 
+  /** New input always wins: it cuts off the avatar mid-sentence and supersedes any reply in flight. */
   async function takeTurn(text) {
-    if (!text || busy) return;
-    busy = true;
-    talkBtn.disabled = true;
-    try {
-      callStatus.textContent = "Thinking…";
-      setCaption("");
-      const reply = await converse(text, "voice");
-      callStatus.textContent = "";
-      if (reply && inCall) await speakAndPlay(reply, { video: true });
-    } finally {
-      busy = false;
-      talkBtn.disabled = false;
-      callStatus.textContent = "";
-    }
+    if (!text) return;
+    const seq = ++turnSeq;
+    const isCurrent = () => seq === turnSeq && inCall;
+    stopPlayback();
+    callStatus.textContent = "Thinking…";
+    setCaption("");
+    const reply = await converse(text, "voice");
+    if (!isCurrent()) return;
+    callStatus.textContent = "";
+    if (reply) await speakAndPlay(reply, { video: true, isCurrent });
+    if (isCurrent()) callStatus.textContent = "";
   }
 
   async function startTalking() {
-    if (!inCall || busy) return;
+    if (!inCall || talkBtn.classList.contains("recording")) return;
     stopPlayback();
     talkBtn.classList.add("recording");
     talkBtn.textContent = "Listening… release to send";
@@ -440,14 +441,15 @@ async function renderAvatar(id) {
     if (!canTalk) setCaption("Mic unavailable - type below to talk.");
     const greeting = history.length ? `Hey, I'm back. Where were we?` : avatar.persona?.greeting;
     if (greeting) {
+      const seq = ++turnSeq;
       setCaption(greeting);
-      busy = true;
-      try { await speakAndPlay(greeting, { video: true }); } finally { busy = false; }
+      await speakAndPlay(greeting, { video: true, isCurrent: () => seq === turnSeq && inCall });
     }
   });
 
   function endCall() {
     inCall = false;
+    turnSeq++;
     stopPlayback();
     inflight?.abort();
     recorder?.state === "recording" && recorder.stop();
@@ -525,8 +527,8 @@ async function renderAvatar(id) {
 config = await api("/api/config");
 const f = config.features;
 $("#modes").innerHTML = [
-  ["Claude persona", f.claude],
+  ["LLM persona", f.llm],
   ["Voice clone", f.voice],
   ["Lip-sync video", f.video],
-].map(([label, on]) => `<span class="mode ${on ? "on" : ""}" title="${on ? "enabled" : "not configured - using fallback"}">${label}${on ? "" : " (off)"}</span>`).join("");
+].map(([label, on]) => `<span class="mode ${on ? "on" : ""}" title="${on ? "connected" : "not reachable - using fallback"}">${label}${on ? "" : " (off)"}</span>`).join("");
 route();

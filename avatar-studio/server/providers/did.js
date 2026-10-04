@@ -1,7 +1,7 @@
 // D-ID Talks API: animates the portrait so it lip-syncs to an audio clip.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { keys } from "../config.js";
+import { did as didConfig } from "../config.js";
 
 const BASE = "https://api.d-id.com";
 const POLL_MS = 1500;
@@ -10,7 +10,7 @@ const TIMEOUT_MS = 3 * 60 * 1000;
 async function call(pathname, init) {
   const res = await fetch(`${BASE}${pathname}`, {
     ...init,
-    headers: { authorization: `Basic ${keys.did}`, accept: "application/json", ...(init?.headers || {}) },
+    headers: { authorization: `Basic ${didConfig.apiKey}`, accept: "application/json", ...(init?.headers || {}) },
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");

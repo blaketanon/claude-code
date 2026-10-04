@@ -1,16 +1,16 @@
 // "Training" pipeline: video -> audio + portrait -> transcript -> voice clone -> personality profile -> video-ready avatar.
 //
-// Nothing here fine-tunes model weights. Voice is an ElevenLabs instant clone; personality is a
-// Claude-written profile plus the verbatim transcript, both injected into the system prompt.
-// That gets most of the realism of a fine-tune from a few minutes of footage, at no training cost.
+// Nothing here fine-tunes model weights. The voice is a zero-shot clone (Chatterbox, conditioned on a
+// reference clip of the person); the personality is an LLM-written profile plus the verbatim transcript,
+// both injected into the system prompt. A few minutes of footage is far too little data to fine-tune on.
 import path from "node:path";
 import fs from "node:fs/promises";
 import { features } from "./config.js";
 import { avatarDir, getAvatar, saveAvatar } from "./store.js";
 import * as media from "./media.js";
-import * as eleven from "./providers/elevenlabs.js";
+import * as voice from "./providers/voice.js";
 import * as did from "./providers/did.js";
-import * as claude from "./providers/claude.js";
+import * as llm from "./providers/llm.js";
 import * as demo from "./providers/demo.js";
 
 export const STEPS = [
@@ -66,35 +66,31 @@ export async function runPipeline(id) {
     });
 
     await step(id, "transcript", async () => {
-      const transcript = features.voice ? await eleven.transcribe(audioFile) : demo.demoTranscript(avatar.name);
+      const transcript = features.voice ? await voice.transcribe(audioFile) : demo.demoTranscript(avatar.name);
       if (!transcript) throw new Error("No speech was detected in the video.");
       await saveAvatar({ ...(await getAvatar(id)), transcript });
       const words = transcript.split(/\s+/).length;
-      return { status: features.voice ? "done" : "skipped", detail: features.voice ? `${words} words` : "Demo placeholder (no ELEVENLABS_API_KEY)" };
+      return { status: features.voice ? "done" : "skipped", detail: features.voice ? `${words} words` : "Demo placeholder (voice server not reachable)" };
     });
 
     await step(id, "voice", async () => {
-      if (!features.voice) return { status: "skipped", detail: "Browser voice will be used (no ELEVENLABS_API_KEY)" };
+      if (!features.voice) return { status: "skipped", detail: "Browser voice will be used (voice server not reachable)" };
       avatar = await getAvatar(id);
-      const voiceId = await eleven.cloneVoice({
-        name: `Avatar Studio - ${avatar.name}`,
-        audioFile,
-        description: `Consented voice clone for ${avatar.name} (avatar ${id})`,
-      });
+      const voiceId = await voice.cloneVoice({ name: `${avatar.name} (${id})`, audioFile });
       await saveAvatar({ ...avatar, voiceId });
-      return { detail: "Instant voice clone created" };
+      return { detail: "Voice reference registered" };
     });
 
     await step(id, "persona", async () => {
       avatar = await getAvatar(id);
-      const persona = features.claude
-        ? await claude.extractPersona({ name: avatar.name, transcript: avatar.transcript, notes: avatar.notes })
+      const persona = features.llm
+        ? await llm.extractPersona({ name: avatar.name, transcript: avatar.transcript, notes: avatar.notes })
         : demo.demoPersona(avatar.name);
-      const systemPrompt = claude.buildSystemPrompt({ name: avatar.name, persona, transcript: avatar.transcript, notes: avatar.notes });
+      const systemPrompt = llm.buildSystemPrompt({ name: avatar.name, persona, transcript: avatar.transcript, notes: avatar.notes });
       await saveAvatar({ ...avatar, persona, systemPrompt });
-      return features.claude
+      return features.llm
         ? { detail: persona.traits.slice(0, 4).join(", ") }
-        : { status: "skipped", detail: "Demo persona (no ANTHROPIC_API_KEY)" };
+        : { status: "skipped", detail: "Demo persona (LLM server not reachable)" };
     });
 
     await step(id, "video", async () => {
