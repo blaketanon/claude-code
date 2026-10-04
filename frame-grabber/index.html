@@ -1,0 +1,980 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1114">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<!--FG:BODY-->
+<title>Frame Grabber</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+/* Layout: a dark editing bay. Library rail on the left, viewer + scrub strip + grabbed shots on the right; stacks into two screens on phones. */
+:root {
+  --bg: #0f1114;
+  --panel: #171a1f;
+  --raise: #20242b;
+  --line: #2b3038;
+  --fg: #eceef1;
+  --muted: #8d95a2;
+  --accent: #ffb627;
+  --accent-ink: #1d1500;
+  --danger: #ff6b5e;
+  --ok: #57d18b;
+  --f-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --f-ui: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --r: 10px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.45 var(--f-ui);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+.app { height: 100%; display: grid; grid-template-rows: auto 1fr; }
+
+/* top bar */
+.bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--bg);
+}
+.mark { display: flex; align-items: center; gap: 10px; font: 800 19px/1 var(--f-display); letter-spacing: -0.01em; white-space: nowrap; }
+.mark svg { flex: none; }
+.bar .spacer { flex: 1; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 38px; padding: 0 14px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--raise); font-weight: 500; white-space: nowrap;
+}
+.btn:hover { border-color: #3c434e; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.ghost:hover { background: var(--raise); }
+.btn.icon { width: 38px; padding: 0; }
+.btn:disabled { opacity: .4; cursor: default; }
+.btn svg { width: 18px; height: 18px; flex: none; }
+
+.main { min-height: 0; display: grid; grid-template-columns: 300px 1fr; }
+
+/* library */
+.library { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: var(--panel); }
+.lib-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px 10px; }
+.eyebrow { font: 600 11px/1 var(--f-ui); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 4px 9px; font-size: 12px; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--raise); color: var(--fg); }
+.grid { flex: 1; min-height: 0; overflow: auto; padding: 0 16px 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; align-content: start; }
+.tile { position: relative; padding: 0; border: 2px solid transparent; border-radius: var(--r); background: #000; overflow: hidden; aspect-ratio: 1; text-align: left; }
+.grid.fit .tile { aspect-ratio: 16 / 10; }
+.tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.grid.fit .tile img { object-fit: contain; }
+.tile[aria-current="true"] { border-color: var(--accent); }
+.tile .dur { position: absolute; right: 6px; bottom: 6px; font: 600 11px/1 var(--f-mono); background: rgba(0,0,0,.66); padding: 4px 5px; border-radius: 4px; }
+.tile .tag { position: absolute; left: 6px; top: 6px; font: 600 10px/1 var(--f-ui); letter-spacing: .08em; text-transform: uppercase; background: var(--accent); color: var(--accent-ink); padding: 4px 5px; border-radius: 4px; }
+.tile .err { position: absolute; inset: 0; display: grid; place-items: center; padding: 8px; font-size: 12px; color: var(--danger); text-align: center; background: var(--panel); }
+.drop-hint { margin: 0 16px 16px; padding: 14px; border: 1px dashed var(--line); border-radius: var(--r); color: var(--muted); font-size: 13px; }
+.drop-hint b { color: var(--fg); font-weight: 600; }
+
+/* editor */
+.editor { min-height: 0; min-width: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto auto auto auto; }
+.stage { position: relative; min-height: 0; background: #000; display: grid; place-items: center; overflow: hidden; }
+.stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+.stage .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+.stage .flash.go { animation: flash .35s ease-out; }
+@keyframes flash { from { opacity: .55; } to { opacity: 0; } }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--muted); }
+.empty h2 { margin: 0 0 6px; font: 600 22px/1.2 var(--f-display); color: var(--fg); text-wrap: balance; }
+.empty p { margin: 0 0 16px; max-width: 40ch; }
+.back { position: absolute; top: 10px; left: 10px; z-index: 2; display: none; background: rgba(15,17,20,.75); backdrop-filter: blur(8px); }
+
+.readout { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; padding: 12px 16px 6px; border-top: 1px solid var(--line); }
+.tc { font: 600 26px/1 var(--f-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.tc .ff { color: var(--accent); }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font: 400 12.5px/1.4 var(--f-mono); font-variant-numeric: tabular-nums; min-width: 0; }
+.meta span b { color: var(--fg); font-weight: 400; }
+.meta a { color: var(--muted); }
+
+/* scrub strip */
+.scrub-wrap { padding: 8px 16px 4px; }
+.strip { position: relative; height: 56px; border-radius: 8px; overflow: hidden; background: var(--raise); touch-action: none; cursor: ew-resize; user-select: none; -webkit-user-select: none; }
+.strip canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.strip .shade { position: absolute; inset: 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); border-radius: 8px; pointer-events: none; }
+.strip .head { position: absolute; top: -2px; bottom: -2px; width: 4px; margin-left: -2px; background: var(--accent); border-radius: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,.5); pointer-events: none; }
+.strip .pins { position: absolute; inset: 0; pointer-events: none; }
+.strip .pin { position: absolute; top: 0; width: 2px; height: 10px; margin-left: -1px; background: var(--fg); opacity: .85; border-radius: 0 0 2px 2px; }
+.scrub-note { height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-top: 4px; font-size: 12px; color: var(--muted); text-align: center; }
+.scrub-note.on { color: var(--accent); }
+
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 16px 12px; }
+.controls .grp { display: flex; gap: 4px; }
+.controls select { height: 38px; border-radius: 8px; border: 1px solid var(--line); background: var(--raise); padding: 0 8px; }
+.controls .spacer { flex: 1; }
+.btn.grab { min-height: 44px; padding: 0 20px; font-size: 16px; }
+kbd { font: 600 11px/1 var(--f-mono); padding: 3px 5px; border: 1px solid rgba(0,0,0,.25); border-radius: 4px; opacity: .7; }
+
+/* shots */
+.shots { border-top: 1px solid var(--line); background: var(--panel); padding: 10px 16px 12px; min-width: 0; }
+.shots-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.shots-head .spacer { flex: 1; }
+.shots-head .count { font: 600 12px/1 var(--f-mono); color: var(--muted); }
+.shot-row { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; min-height: 94px; }
+.shot { flex: none; width: 150px; display: grid; gap: 5px; }
+.shot .pic { position: relative; height: 84px; border-radius: 7px; overflow: hidden; background: #000; }
+.shot img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: pointer; }
+.shot .fmt { position: absolute; left: 5px; top: 5px; font: 600 10px/1 var(--f-mono); background: rgba(0,0,0,.7); padding: 3px 4px; border-radius: 3px; text-transform: uppercase; }
+.shot .acts { position: absolute; right: 4px; top: 4px; display: flex; gap: 4px; }
+.shot .acts button { width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 6px; background: rgba(0,0,0,.66); }
+.shot .acts button:hover { background: rgba(0,0,0,.85); }
+.shot .acts svg { width: 15px; height: 15px; }
+.shot .cap { font: 400 11.5px/1.2 var(--f-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shots-empty { align-self: center; color: var(--muted); font-size: 13px; }
+
+/* dialog */
+dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--fg); padding: 0; width: min(440px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgba(5,6,8,.7); }
+.dlg { padding: 20px; display: grid; gap: 18px; }
+.dlg h2 { margin: 0; font: 600 20px/1.2 var(--f-display); }
+.field { display: grid; gap: 7px; }
+.field label, .field .lbl { font-weight: 600; font-size: 13.5px; }
+.field .hint { font-size: 12.5px; color: var(--muted); }
+.field input[type="range"] { width: 100%; accent-color: var(--accent); }
+.field input[type="text"] { height: 38px; border-radius: 8px; border: 1px solid var(--line); background: var(--raise); padding: 0 10px; font-family: var(--f-mono); font-size: 13px; }
+.check { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.dlg .row { display: flex; justify-content: flex-end; gap: 8px; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13px; color: var(--muted); }
+.keys kbd { justify-self: start; color: var(--fg); border-color: var(--line); opacity: 1; }
+
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) translateY(20px); opacity: 0; background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 999px; font-weight: 500; font-size: 14px; pointer-events: none; transition: opacity .2s, transform .2s; max-width: calc(100vw - 32px); z-index: 10; }
+.toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.bad { background: var(--danger); color: #1a0402; }
+
+.dropzone { position: fixed; inset: 12px; border: 2px dashed var(--accent); border-radius: 18px; background: rgba(15,17,20,.82); display: grid; place-items: center; font: 600 22px/1.2 var(--f-display); color: var(--accent); z-index: 20; pointer-events: none; }
+
+@media (max-width: 860px) {
+  .main { grid-template-columns: 1fr; }
+  .library { border-right: 0; }
+  .app[data-view="library"] .editor { display: none; }
+  .app[data-view="editor"] .library { display: none; }
+  .editor { overflow-y: auto; grid-template-rows: minmax(220px, 46vh) auto auto auto auto; }
+  .back { display: inline-flex; }
+  .bar .label { display: none; }
+  .tc { font-size: 22px; }
+  .controls .speed-lbl { display: none; }
+  .grab kbd { display: none; }
+  .shot { width: 120px; }
+  .shot .pic { height: 70px; }
+  .shot-row { min-height: 80px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage .flash.go { animation: none; }
+  .toast { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="app" id="app" data-view="editor">
+  <header class="bar">
+    <div class="mark">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="4" width="24" height="18" rx="3" fill="none" stroke="#ffb627" stroke-width="2"/><rect x="4" y="7" width="4" height="12" rx="1" fill="#ffb627" opacity=".35"/><rect x="11" y="7" width="4" height="12" rx="1" fill="#ffb627"/><rect x="18" y="7" width="4" height="12" rx="1" fill="#ffb627" opacity=".35"/></svg>
+      Frame Grabber
+    </div>
+    <div class="spacer"></div>
+    <button class="btn primary" id="importBtn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      <span class="label">Add videos</span>
+    </button>
+    <button class="btn icon ghost" id="settingsBtn" type="button" aria-label="Export settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+    </button>
+    <input type="file" id="fileInput" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv" multiple hidden>
+  </header>
+
+  <div class="main">
+    <aside class="library" aria-label="Video library">
+      <div class="lib-head">
+        <span class="eyebrow">Videos <span id="libCount"></span></span>
+        <div class="seg" role="group" aria-label="Thumbnail shape">
+          <button type="button" id="gridSquare" aria-pressed="true">Square</button>
+          <button type="button" id="gridFit" aria-pressed="false">Fit</button>
+        </div>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="drop-hint"><b>Drop videos here</b> or use Add videos. Files stay on this device; nothing is uploaded.</div>
+    </aside>
+
+    <section class="editor" aria-label="Frame editor">
+      <div class="stage" id="stage">
+        <button class="btn back" id="backBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg>
+          Videos
+        </button>
+        <video id="video" playsinline muted preload="auto"></video>
+        <div class="flash" id="flash"></div>
+        <div class="empty" id="empty">
+          <div>
+            <h2>Pull the perfect still from any video</h2>
+            <p>Step through frame by frame, then save the frame at the video's full resolution with its date and location kept.</p>
+            <button class="btn primary" type="button" id="emptyImport">Add videos</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="readout">
+        <div class="tc" id="tc" aria-live="off">00:00:00<span class="ff">:00</span></div>
+        <div class="meta" id="meta"></div>
+      </div>
+
+      <div class="scrub-wrap">
+        <div class="strip" id="strip" role="slider" tabindex="0" aria-label="Video position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
+          <canvas id="stripCanvas"></canvas>
+          <div class="pins" id="pins"></div>
+          <div class="head" id="head" style="left:0"></div>
+          <div class="shade"></div>
+        </div>
+        <div class="scrub-note" id="scrubNote">Drag to scrub. Slide up while dragging for finer control.</div>
+      </div>
+
+      <div class="controls">
+        <div class="grp">
+          <button class="btn icon" type="button" id="back10" aria-label="Back 10 frames" title="Back 10 frames (Shift+←)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 6l-6 6 6 6M19 6l-6 6 6 6"/></svg>
+          </button>
+          <button class="btn icon" type="button" id="back1" aria-label="Previous frame" title="Previous frame (←)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <button class="btn icon" type="button" id="playBtn" aria-label="Play" title="Play / pause (Space)">
+            <svg id="playIco" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5l12 7-12 7z"/></svg>
+          </button>
+          <button class="btn icon" type="button" id="fwd1" aria-label="Next frame" title="Next frame (→)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+          <button class="btn icon" type="button" id="fwd10" aria-label="Forward 10 frames" title="Forward 10 frames (Shift+→)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M13 6l6 6-6 6M5 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+        <label class="speed-lbl eyebrow" for="speed">Speed</label>
+        <select id="speed" aria-label="Playback speed">
+          <option value="0.25">0.25×</option>
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+        </select>
+        <div class="spacer"></div>
+        <button class="btn primary grab" type="button" id="grabBtn" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3"/><circle cx="12" cy="12" r="3"/></svg>
+          Grab frame <kbd>G</kbd>
+        </button>
+      </div>
+
+      <div class="shots">
+        <div class="shots-head">
+          <span class="eyebrow">Grabbed frames</span>
+          <span class="count" id="shotCount"></span>
+          <div class="spacer"></div>
+          <button class="btn" type="button" id="clearShots" hidden>Clear</button>
+          <button class="btn" type="button" id="saveAll" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14"/></svg>
+            Save all (.zip)
+          </button>
+        </div>
+        <div class="shot-row" id="shotRow"><div class="shots-empty" id="shotsEmpty">Frames you grab appear here, ready to save.</div></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<dialog id="settings" aria-labelledby="settingsTitle">
+  <form method="dialog" class="dlg" id="settingsForm">
+    <h2 id="settingsTitle">Export settings</h2>
+    <div class="field">
+      <span class="lbl" id="fmtLbl">Image format</span>
+      <div class="seg" role="radiogroup" aria-labelledby="fmtLbl" id="fmtSeg">
+        <button type="button" data-fmt="jpeg" aria-pressed="true">JPEG</button>
+        <button type="button" data-fmt="png" aria-pressed="false">PNG</button>
+        <button type="button" data-fmt="webp" aria-pressed="false">WebP</button>
+      </div>
+      <span class="hint" id="fmtHint"></span>
+    </div>
+    <div class="field" id="qualityField">
+      <label for="quality">Compression quality <span id="qualityVal" style="font-family:var(--f-mono);color:var(--muted)"></span></label>
+      <input type="range" id="quality" min="50" max="100" step="1" value="92">
+    </div>
+    <div class="field">
+      <label class="check"><input type="checkbox" id="keepMeta" checked> Keep date and location from the video</label>
+      <span class="hint">Written as EXIF into JPEG and PNG. The capture time is the video's recording time plus the frame's position.</span>
+    </div>
+    <div class="field">
+      <label class="check"><input type="checkbox" id="saveOnGrab"> Save each frame as soon as it's grabbed</label>
+    </div>
+    <div class="field">
+      <label for="timeFmt" class="lbl">Time display</label>
+      <div class="seg" role="radiogroup" id="timeSeg">
+        <button type="button" data-tf="frames" aria-pressed="true">HH:MM:SS:FF</button>
+        <button type="button" data-tf="ms" aria-pressed="false">Seconds.ms</button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="lbl">Keyboard</span>
+      <div class="keys">
+        <kbd>← →</kbd><span>Step one frame</span>
+        <kbd>Shift ← →</kbd><span>Step ten frames</span>
+        <kbd>Space</kbd><span>Play or pause</span>
+        <kbd>G</kbd><span>Grab the current frame</span>
+        <kbd>Home End</kbd><span>First or last frame</span>
+      </div>
+    </div>
+    <div class="row"><button class="btn primary" value="close">Done</button></div>
+  </form>
+</dialog>
+
+<div class="dropzone" id="dropzone" hidden>Drop videos to add them</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+"use strict";
+
+/* ---------- helpers ---------- */
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("fg." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("fg." + k, JSON.stringify(v)); } catch {} },
+};
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const pad = (n, w = 2) => String(Math.floor(n)).padStart(w, "0");
+let toastT;
+function toast(msg, bad) {
+  const t = $("toast"); t.textContent = msg; t.classList.toggle("bad", !!bad); t.classList.add("on");
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 2600);
+}
+function fmtBytes(n) { return n > 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.round(n / 1e3) + " KB"; }
+function fmtDur(s) { s = Math.round(s); return Math.floor(s / 60) + ":" + pad(s % 60); }
+
+/* ---------- settings ---------- */
+const settings = Object.assign({ fmt: "jpeg", quality: 92, keepMeta: true, saveOnGrab: false, timeFmt: "frames", gridFit: false }, store.get("settings", {}));
+function saveSettings() { store.set("settings", settings); }
+
+/* ---------- state ---------- */
+const video = $("video");
+const state = { items: [], current: null, frame: 0, shots: [], scrubbing: false };
+let nextId = 1;
+
+/* ---------- MP4 / QuickTime metadata ---------- */
+const MAC_EPOCH = 2082844800; // seconds between 1904-01-01 and 1970-01-01
+const fourcc = (dv, o) => String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));
+function* boxes(dv, start, end) {
+  let o = start;
+  while (o + 8 <= end) {
+    let size = dv.getUint32(o), hdr = 8;
+    const type = fourcc(dv, o + 4);
+    if (size === 1) { size = Number(dv.getBigUint64(o + 8)); hdr = 16; }
+    else if (size === 0) size = end - o;
+    if (size < hdr || o + size > end) return;
+    yield { type, start: o, body: o + hdr, end: o + size };
+    o += size;
+  }
+}
+const child = (dv, b, type) => { for (const c of boxes(dv, b.body, b.end)) if (c.type === type) return c; return null; };
+async function readMoov(file) {
+  let off = 0;
+  while (off + 8 <= file.size) {
+    const dv = new DataView(await file.slice(off, off + 16).arrayBuffer());
+    if (dv.byteLength < 8) return null;
+    let size = dv.getUint32(0);
+    const type = fourcc(dv, 4);
+    if (size === 1) size = Number(dv.getBigUint64(8)); else if (size === 0) size = file.size - off;
+    if (size < 8) return null;
+    if (type === "moov") return size > 96e6 ? null : new DataView(await file.slice(off, off + size).arrayBuffer());
+    off += size;
+  }
+  return null;
+}
+function parseISO6709(s) {
+  const m = /([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)?/.exec(s || "");
+  if (!m) return null;
+  const lat = parseFloat(m[1]), lon = parseFloat(m[2]);
+  if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return { lat, lon, alt: m[3] ? parseFloat(m[3]) : null };
+}
+function parseAppleDate(s) {
+  // e.g. 2026-09-12T11:42:07-0700
+  const m = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d+)?(Z|[+-]\d\d:?\d\d)?/.exec(s || "");
+  if (!m) return null;
+  let tz = 0, tzKnown = false;
+  if (m[7] && m[7] !== "Z") { const z = m[7].replace(":", ""); tz = (z[0] === "-" ? -1 : 1) * (+z.slice(1, 3) * 60 + +z.slice(3, 5)); tzKnown = true; }
+  else if (m[7] === "Z") tzKnown = true;
+  const utc = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) - tz * 60000;
+  return { ms: utc, tz: tzKnown ? tz : null };
+}
+async function readMeta(file) {
+  const out = { created: null, tz: null, loc: null, fps: null, frames: null };
+  try {
+    const dv = await readMoov(file);
+    if (!dv) return out;
+    const moov = { body: 8, end: dv.byteLength };
+    const td = new TextDecoder();
+    for (const b of boxes(dv, moov.body, moov.end)) {
+      if (b.type === "mvhd") {
+        const v = dv.getUint8(b.body);
+        const secs = v === 1 ? Number(dv.getBigUint64(b.body + 4)) : dv.getUint32(b.body + 4);
+        if (secs > MAC_EPOCH) out.created = out.created ?? (secs - MAC_EPOCH) * 1000;
+      } else if (b.type === "udta") {
+        for (const u of boxes(dv, b.body, b.end)) {
+          if (u.type === "©xyz") {
+            const len = dv.getUint16(u.body);
+            out.loc = out.loc || parseISO6709(td.decode(new Uint8Array(dv.buffer, u.body + 4, Math.min(len, u.end - u.body - 4))));
+          } else if (u.type === "loci" && !out.loc) {
+            // 3GPP location: version/flags, language, name\0, role, then 16.16 fixed lon, lat, alt
+            let o = u.body + 6;
+            while (o < u.end && dv.getUint8(o) !== 0) o++;
+            o += 2;
+            if (o + 12 <= u.end) {
+              const lon = dv.getInt32(o) / 65536, lat = dv.getInt32(o + 4) / 65536, alt = dv.getInt32(o + 8) / 65536;
+              if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180 && (lat || lon)) out.loc = { lat, lon, alt: alt || null };
+            }
+          } else if (u.type === "meta" && !out.loc) {
+            const ilst = child(dv, { body: u.body + 4, end: u.end }, "ilst");
+            const xyz = ilst && child(dv, ilst, "©xyz");
+            const data = xyz && child(dv, xyz, "data");
+            if (data) out.loc = parseISO6709(td.decode(new Uint8Array(dv.buffer, data.body + 8, data.end - data.body - 8)));
+          }
+        }
+      } else if (b.type === "meta") {
+        // QuickTime metadata (iPhone): keys + ilst
+        let start = b.body;
+        if (fourcc(dv, b.body + 4) !== "hdlr") start += 4; // ISO full box
+        const keys = [];
+        let ilst = null;
+        for (const m of boxes(dv, start, b.end)) {
+          if (m.type === "keys") {
+            const n = dv.getUint32(m.body + 4); let o = m.body + 8;
+            for (let i = 0; i < n && o + 8 <= m.end; i++) {
+              const ks = dv.getUint32(o);
+              keys.push(td.decode(new Uint8Array(dv.buffer, o + 8, Math.max(0, ks - 8))));
+              o += ks;
+            }
+          } else if (m.type === "ilst") ilst = m;
+        }
+        if (ilst) for (const it of boxes(dv, ilst.body, ilst.end)) {
+          const key = keys[dv.getUint32(it.start + 4) - 1];
+          const data = child(dv, it, "data");
+          if (!key || !data) continue;
+          const val = td.decode(new Uint8Array(dv.buffer, data.body + 8, data.end - data.body - 8));
+          if (key === "com.apple.quicktime.location.ISO6709") out.loc = parseISO6709(val) || out.loc;
+          if (key === "com.apple.quicktime.creationdate") { const d = parseAppleDate(val); if (d) { out.created = d.ms; out.tz = d.tz; } }
+        }
+      } else if (b.type === "trak" && !out.fps) {
+        const mdia = child(dv, b, "mdia"); if (!mdia) continue;
+        const hdlr = child(dv, mdia, "hdlr");
+        if (!hdlr || fourcc(dv, hdlr.body + 8) !== "vide") continue;
+        const mdhd = child(dv, mdia, "mdhd");
+        const stbl = child(dv, child(dv, mdia, "minf") || mdia, "stbl");
+        const stts = stbl && child(dv, stbl, "stts");
+        if (!mdhd || !stts) continue;
+        const v = dv.getUint8(mdhd.body);
+        const scale = dv.getUint32(mdhd.body + (v === 1 ? 20 : 12));
+        const dur = v === 1 ? Number(dv.getBigUint64(mdhd.body + 24)) : dv.getUint32(mdhd.body + 16);
+        let n = 0; const ec = dv.getUint32(stts.body + 4);
+        for (let i = 0; i < ec; i++) n += dv.getUint32(stts.body + 8 + i * 8);
+        if (scale && dur && n) { out.frames = n; out.fps = n / (dur / scale); }
+      }
+    }
+  } catch (e) { console.warn("metadata", e); }
+  return out;
+}
+const niceFps = (f) => { for (const s of [23.976, 24, 25, 29.97, 30, 48, 50, 59.94, 60, 120, 240]) if (Math.abs(f - s) < 0.02 * s) return s; return Math.round(f * 100) / 100; };
+
+/* ---------- EXIF writer ---------- */
+function tiffBlock({ ms, tz, loc }) {
+  const T = { BYTE: 1, ASCII: 2, SHORT: 3, LONG: 4, RATIONAL: 5 };
+  const enc = (type, vals) => {
+    if (type === T.ASCII) { const s = vals + "\0"; return Uint8Array.from(s, (c) => c.charCodeAt(0) & 0x7f); }
+    const size = { 1: 1, 3: 2, 4: 4, 5: 8 }[type];
+    const b = new Uint8Array(vals.length * size), d = new DataView(b.buffer);
+    vals.forEach((v, i) => {
+      if (type === T.BYTE) d.setUint8(i, v);
+      else if (type === T.SHORT) d.setUint16(i * 2, v);
+      else if (type === T.LONG) d.setUint32(i * 4, v);
+      else { d.setUint32(i * 8, v[0]); d.setUint32(i * 8 + 4, v[1]); }
+    });
+    return b;
+  };
+  const entry = (tag, type, vals) => { const data = enc(type, vals); return { tag, type, data, count: type === T.ASCII ? data.length : type === T.RATIONAL ? vals.length : vals.length }; };
+  const ifdSize = (es) => 2 + es.length * 12 + 4 + es.reduce((s, e) => s + (e.data.length > 4 ? e.data.length + (e.data.length & 1) : 0), 0);
+
+  const off = tz ?? -new Date(ms).getTimezoneOffset();
+  const local = new Date(ms + off * 60000);
+  const dstr = `${local.getUTCFullYear()}:${pad(local.getUTCMonth() + 1)}:${pad(local.getUTCDate())} ${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}:${pad(local.getUTCSeconds())}`;
+  const ostr = (off < 0 ? "-" : "+") + pad(Math.abs(off) / 60) + ":" + pad(Math.abs(off) % 60);
+  const sub = String(Math.floor(ms % 1000)).padStart(3, "0");
+
+  const exif = [
+    entry(0x9003, T.ASCII, dstr), entry(0x9004, T.ASCII, dstr),
+    entry(0x9011, T.ASCII, ostr), entry(0x9012, T.ASCII, ostr),
+    entry(0x9291, T.ASCII, sub), entry(0x9292, T.ASCII, sub),
+  ];
+  let gps = null;
+  if (loc) {
+    const dms = (v) => { v = Math.abs(v); const d = Math.floor(v), mf = (v - d) * 60, m = Math.floor(mf), s = Math.round((mf - m) * 60 * 10000); return [[d, 1], [m, 1], [s, 10000]]; };
+    gps = [
+      entry(0x0000, T.BYTE, [2, 3, 0, 0]),
+      entry(0x0001, T.ASCII, loc.lat < 0 ? "S" : "N"), entry(0x0002, T.RATIONAL, dms(loc.lat)),
+      entry(0x0003, T.ASCII, loc.lon < 0 ? "W" : "E"), entry(0x0004, T.RATIONAL, dms(loc.lon)),
+    ];
+    if (loc.alt != null && isFinite(loc.alt)) gps.push(entry(0x0005, T.BYTE, [loc.alt < 0 ? 1 : 0]), entry(0x0006, T.RATIONAL, [[Math.round(Math.abs(loc.alt) * 100), 100]]));
+  }
+  const ifd0 = [entry(0x0131, T.ASCII, "Frame Grabber"), entry(0x0132, T.ASCII, dstr), entry(0x8769, T.LONG, [0])];
+  if (gps) ifd0.push(entry(0x8825, T.LONG, [0]));
+  const o0 = 8, oE = o0 + ifdSize(ifd0), oG = oE + ifdSize(exif);
+  ifd0.find((e) => e.tag === 0x8769).data = enc(T.LONG, [oE]);
+  if (gps) ifd0.find((e) => e.tag === 0x8825).data = enc(T.LONG, [oG]);
+  const total = oG + (gps ? ifdSize(gps) : 0);
+  const buf = new Uint8Array(total), dv = new DataView(buf.buffer);
+  buf.set([0x4d, 0x4d, 0x00, 0x2a]); dv.setUint32(4, o0);
+  const write = (es, at) => {
+    es.sort((a, b) => a.tag - b.tag);
+    dv.setUint16(at, es.length);
+    let dataAt = at + 2 + es.length * 12 + 4;
+    es.forEach((e, i) => {
+      const p = at + 2 + i * 12;
+      dv.setUint16(p, e.tag); dv.setUint16(p + 2, e.type); dv.setUint32(p + 4, e.count);
+      if (e.data.length <= 4) buf.set(e.data, p + 8);
+      else { dv.setUint32(p + 8, dataAt); buf.set(e.data, dataAt); dataAt += e.data.length + (e.data.length & 1); }
+    });
+    dv.setUint32(at + 2 + es.length * 12, 0);
+  };
+  write(ifd0, o0); write(exif, oE); if (gps) write(gps, oG);
+  return buf;
+}
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = (u8) => { let c = 0xffffffff; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+async function embedMeta(blob, fmt, tiff) {
+  const src = new Uint8Array(await blob.arrayBuffer());
+  if (fmt === "jpeg" && src[0] === 0xff && src[1] === 0xd8) {
+    const len = 2 + 6 + tiff.length;
+    const app1 = new Uint8Array(2 + len);
+    app1.set([0xff, 0xe1, len >> 8, len & 0xff, 0x45, 0x78, 0x69, 0x66, 0, 0]); app1.set(tiff, 10);
+    return new Blob([src.subarray(0, 2), app1, src.subarray(2)], { type: "image/jpeg" });
+  }
+  if (fmt === "png") {
+    const ihdrEnd = 8 + 8 + 13 + 4; // signature + IHDR chunk
+    const chunk = new Uint8Array(12 + tiff.length), d = new DataView(chunk.buffer);
+    d.setUint32(0, tiff.length); chunk.set([0x65, 0x58, 0x49, 0x66], 4); chunk.set(tiff, 8);
+    d.setUint32(8 + tiff.length, crc32(chunk.subarray(4, 8 + tiff.length)));
+    return new Blob([src.subarray(0, ihdrEnd), chunk, src.subarray(ihdrEnd)], { type: "image/png" });
+  }
+  return blob;
+}
+
+/* ---------- saving ---------- */
+let dlPromise = null;
+function downloadsCap() {
+  if (!dlPromise) dlPromise = (window.claude && typeof window.claude.use === "function") ? window.claude.use("downloads").catch(() => null) : Promise.resolve(null);
+  return dlPromise;
+}
+async function saveBlob(blob, filename) {
+  const dl = await downloadsCap();
+  if (dl) {
+    try { await dl.save({ filename, data: blob }); toast("Saved " + filename); }
+    catch (e) { if (e && e.code !== "declined") toast("Couldn't save: " + (e.message || e.code), true); }
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+  toast("Saved " + filename);
+}
+async function shareBlob(blob, filename) {
+  const file = new File([blob], filename, { type: blob.type });
+  try { await navigator.share({ files: [file] }); }
+  catch (e) { if (e && e.name !== "AbortError") saveBlob(blob, filename); }
+}
+const canShareFiles = (() => { try { return !!(navigator.canShare && navigator.canShare({ files: [new File([""], "a.png", { type: "image/png" })] })) && !window.claude; } catch { return false; } })();
+
+/* ---------- library ---------- */
+function seekOnce(v, t) {
+  return new Promise((res, rej) => {
+    const done = () => { v.removeEventListener("seeked", done); v.removeEventListener("error", fail); res(); };
+    const fail = () => { v.removeEventListener("seeked", done); v.removeEventListener("error", fail); rej(new Error("decode")); };
+    v.addEventListener("seeked", done); v.addEventListener("error", fail);
+    v.currentTime = t;
+  });
+}
+function loadedMeta(v, timeout = 15000) {
+  return new Promise((res, rej) => {
+    if (v.readyState >= 1) return res();
+    const t = setTimeout(() => rej(new Error("timeout")), timeout);
+    v.addEventListener("loadedmetadata", () => { clearTimeout(t); res(); }, { once: true });
+    v.addEventListener("error", () => { clearTimeout(t); rej(new Error("decode")); }, { once: true });
+  });
+}
+async function makePoster(item) {
+  const v = document.createElement("video");
+  v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = item.url;
+  try {
+    await loadedMeta(v);
+    item.duration = v.duration; item.w = v.videoWidth; item.h = v.videoHeight;
+    if (!item.w) throw new Error("no video track");
+    await seekOnce(v, Math.min(item.duration * 0.1, 1));
+    const c = document.createElement("canvas"), s = 320 / Math.max(item.w, item.h);
+    c.width = Math.round(item.w * s); c.height = Math.round(item.h * s);
+    c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+    item.poster = c.toDataURL("image/jpeg", 0.8);
+  } catch (e) {
+    item.error = true;
+  } finally { v.removeAttribute("src"); v.load(); }
+}
+async function addFiles(files, opts = {}) {
+  const vids = [...files].filter((f) => f.type.startsWith("video/") || /\.(mov|mp4|m4v|webm|mkv|3gp)$/i.test(f.name));
+  if (!vids.length) { toast("Those files aren't videos. Try .mov, .mp4 or .webm.", true); return; }
+  const added = [];
+  for (const file of vids) {
+    const item = { id: nextId++, file, name: file.name, url: URL.createObjectURL(file), sample: !!opts.sample };
+    state.items.unshift(item); added.push(item);
+  }
+  renderGrid();
+  await Promise.all(added.map(async (it) => { it.meta = await readMeta(it.file); await makePoster(it); renderGrid(); }));
+  const first = added.find((i) => !i.error);
+  if (first && (opts.open || !state.current)) openItem(first);
+  else if (added.every((i) => i.error)) toast("This browser can't decode that video. HEVC (H.265) clips may need Safari.", true);
+}
+function renderGrid() {
+  const g = $("grid");
+  g.classList.toggle("fit", settings.gridFit);
+  $("gridSquare").setAttribute("aria-pressed", String(!settings.gridFit));
+  $("gridFit").setAttribute("aria-pressed", String(settings.gridFit));
+  $("libCount").textContent = state.items.length ? "· " + state.items.length : "";
+  g.replaceChildren(...state.items.map((it) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "tile";
+    b.setAttribute("aria-current", String(state.current === it));
+    b.setAttribute("aria-label", it.name);
+    if (it.poster) { const img = new Image(); img.src = it.poster; img.alt = ""; b.append(img); }
+    if (it.duration) { const d = document.createElement("span"); d.className = "dur"; d.textContent = fmtDur(it.duration); b.append(d); }
+    if (it.sample) { const t = document.createElement("span"); t.className = "tag"; t.textContent = "Sample"; b.append(t); }
+    if (it.error) { const e = document.createElement("span"); e.className = "err"; e.textContent = "Can't play this format here"; b.append(e); }
+    b.addEventListener("click", () => { if (!it.error) openItem(it); });
+    return b;
+  }));
+}
+
+/* ---------- editor ---------- */
+const fps = () => state.current?.fps || 30;
+const totalFrames = () => state.current ? Math.max(1, state.current.frames || Math.round(video.duration * fps())) : 1;
+const frameAt = (t) => Math.floor(t * fps() + 1e-3);
+
+async function openItem(it) {
+  state.current = it; state.frame = 0;
+  $("app").dataset.view = "editor";
+  $("empty").hidden = true;
+  video.pause();
+  video.src = it.url;
+  try { await loadedMeta(video); } catch { toast("This browser can't play that video.", true); return; }
+  it.fps = it.meta?.fps ? niceFps(it.meta.fps) : it.fps || null;
+  it.frames = it.meta?.frames || null;
+  if (!it.fps) estimateFps(it);
+  video.playbackRate = +$("speed").value;
+  $("grabBtn").disabled = false;
+  renderGrid(); renderMeta(); seekFrame(0); buildStrip(); renderPins();
+}
+function estimateFps(it) {
+  // No container info (e.g. WebM): measure presented frames during a short silent play.
+  if (!("requestVideoFrameCallback" in HTMLVideoElement.prototype)) return;
+  const v = document.createElement("video");
+  v.muted = true; v.playsInline = true; v.src = it.url;
+  const times = [];
+  const cb = (_, m) => { times.push(m.mediaTime); if (times.length < 12) v.requestVideoFrameCallback(cb); else finish(); };
+  const finish = () => {
+    v.pause(); v.removeAttribute("src"); v.load();
+    const d = []; for (let i = 1; i < times.length; i++) if (times[i] > times[i - 1]) d.push(times[i] - times[i - 1]);
+    d.sort((a, b) => a - b);
+    if (d.length) { it.fps = niceFps(1 / d[0]); if (state.current === it) { renderMeta(); seekFrame(state.frame); } }
+  };
+  v.requestVideoFrameCallback(cb);
+  v.play().catch(() => {});
+  setTimeout(() => { if (times.length < 12) finish(); }, 4000);
+}
+function renderMeta() {
+  const it = state.current; if (!it) return;
+  const m = it.meta || {};
+  const parts = [
+    `<span><b>${it.w}×${it.h}</b></span>`,
+    `<span><b>${it.fps ? it.fps : "~30"}</b> fps</span>`,
+    `<span>frame <b id="frameNo">1</b> / ${totalFrames()}</span>`,
+  ];
+  if (m.created) parts.push(`<span>${new Date(m.created).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</span>`);
+  if (m.loc) parts.push(`<span><a href="https://www.openstreetmap.org/?mlat=${m.loc.lat}&mlon=${m.loc.lon}#map=15/${m.loc.lat}/${m.loc.lon}" target="_blank" rel="noopener">${m.loc.lat.toFixed(4)}, ${m.loc.lon.toFixed(4)}</a></span>`);
+  parts.push(`<span>${fmtBytes(it.file.size)}</span>`);
+  $("meta").innerHTML = parts.join("");
+}
+function timecode(t) {
+  if (settings.timeFmt === "ms") {
+    const m = Math.floor(t / 60), s = t - m * 60;
+    return `${pad(m)}:${s.toFixed(3).padStart(6, "0")}`.replace(/(\.\d{3})$/, '<span class="ff">$1</span>');
+  }
+  const f = frameAt(t), r = Math.round(fps());
+  const sec = Math.floor(f / fps());
+  const ff = f - Math.round(sec * fps());
+  return `${pad(sec / 3600)}:${pad((sec / 60) % 60)}:${pad(sec % 60)}<span class="ff">:${pad(clamp(ff, 0, r - 1))}</span>`;
+}
+function renderTime(t) {
+  if (!state.current) return;
+  const d = video.duration || 1;
+  $("tc").innerHTML = timecode(t);
+  const fn = $("frameNo"); if (fn) fn.textContent = String(Math.min(frameAt(t) + 1, totalFrames()));
+  $("head").style.left = (clamp(t / d, 0, 1) * 100) + "%";
+  const s = $("strip"); s.setAttribute("aria-valuemax", String(totalFrames())); s.setAttribute("aria-valuenow", String(frameAt(t) + 1));
+}
+function seekFrame(n) {
+  if (!state.current) return;
+  n = clamp(Math.round(n), 0, totalFrames() - 1);
+  state.frame = n;
+  if (!video.paused) video.pause();
+  video.currentTime = Math.min((n + 0.25) / fps(), Math.max(0, video.duration - 0.001));
+  renderTime(n / fps());
+}
+function seekTime(t) { seekFrame(frameAt(clamp(t, 0, video.duration || 0))); }
+const step = (k) => seekFrame(state.frame + k);
+
+function tick() {
+  if (!video.paused) {
+    if ("requestVideoFrameCallback" in video) return;
+    state.frame = frameAt(video.currentTime); renderTime(video.currentTime);
+    requestAnimationFrame(tick);
+  }
+}
+function onFrame(_, m) {
+  state.frame = frameAt(m.mediaTime); renderTime(m.mediaTime);
+  if (!video.paused) video.requestVideoFrameCallback(onFrame);
+}
+video.addEventListener("play", () => {
+  $("playIco").innerHTML = '<path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/>'; $("playBtn").setAttribute("aria-label", "Pause");
+  if ("requestVideoFrameCallback" in video) video.requestVideoFrameCallback(onFrame); else requestAnimationFrame(tick);
+});
+video.addEventListener("pause", () => {
+  $("playIco").innerHTML = '<path d="M7 5l12 7-12 7z"/>'; $("playBtn").setAttribute("aria-label", "Play");
+  if (!state.scrubbing) { state.frame = frameAt(video.currentTime); renderTime(state.frame / fps()); }
+});
+video.addEventListener("ended", () => { seekFrame(totalFrames() - 1); });
+function togglePlay() {
+  if (!state.current) return;
+  if (video.paused) { if (state.frame >= totalFrames() - 1) seekFrame(0); video.play().catch(() => {}); }
+  else video.pause();
+}
+
+/* ---------- thumbnail strip ---------- */
+let stripJob = 0;
+async function buildStrip() {
+  const it = state.current; if (!it) return;
+  const job = ++stripJob;
+  const cv = $("stripCanvas"), box = $("strip").getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = Math.round(box.width * dpr); cv.height = Math.round(box.height * dpr);
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#20242b"; ctx.fillRect(0, 0, cv.width, cv.height);
+  const th = cv.height, tw = Math.max(8, Math.round(th * (it.w / it.h || 16 / 9)));
+  const n = Math.ceil(cv.width / tw);
+  const v = document.createElement("video");
+  v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = it.url;
+  try {
+    await loadedMeta(v);
+    for (let i = 0; i < n; i++) {
+      if (job !== stripJob) break;
+      await seekOnce(v, clamp(((i + 0.5) / n) * v.duration, 0, v.duration - 0.01));
+      if (job !== stripJob) break;
+      const sw = v.videoWidth, sh = v.videoHeight, r = tw / th;
+      let cw = sw, ch = sw / r; if (ch > sh) { ch = sh; cw = sh * r; }
+      ctx.drawImage(v, (sw - cw) / 2, (sh - ch) / 2, cw, ch, i * tw, 0, tw, th);
+    }
+  } catch {}
+  v.removeAttribute("src"); v.load();
+}
+let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(buildStrip, 200); });
+
+/* scrubbing: horizontal drag moves; sliding up away from the strip slows it down */
+(() => {
+  const strip = $("strip"), note = $("scrubNote");
+  const defaultNote = note.textContent;
+  let startX = 0, startY = 0, lastX = 0, t = 0, active = false;
+  const speeds = [[0, 1, ""], [50, 0.5, "Half-speed scrubbing"], [110, 0.25, "Quarter-speed scrubbing"], [170, 0.1, "Fine scrubbing"]];
+  strip.addEventListener("pointerdown", (e) => {
+    if (!state.current) return;
+    active = true; state.scrubbing = true; strip.setPointerCapture(e.pointerId);
+    video.pause();
+    const r = strip.getBoundingClientRect();
+    t = clamp((e.clientX - r.left) / r.width, 0, 1) * video.duration;
+    startX = lastX = e.clientX; startY = e.clientY;
+    seekTime(t);
+  });
+  strip.addEventListener("pointermove", (e) => {
+    if (!active) return;
+    const r = strip.getBoundingClientRect();
+    const up = Math.max(0, startY - e.clientY);
+    let sp = speeds[0]; for (const s of speeds) if (up >= s[0]) sp = s;
+    note.textContent = sp[2] || defaultNote; note.classList.toggle("on", !!sp[2]);
+    t = clamp(t + ((e.clientX - lastX) / r.width) * video.duration * sp[1], 0, video.duration);
+    lastX = e.clientX;
+    seekTime(t);
+  });
+  const end = () => { if (!active) return; active = false; state.scrubbing = false; note.textContent = defaultNote; note.classList.remove("on"); };
+  strip.addEventListener("pointerup", end); strip.addEventListener("pointercancel", end);
+  strip.addEventListener("keydown", (e) => {
+    const k = { ArrowLeft: -1, ArrowRight: 1, ArrowDown: -1, ArrowUp: 1, PageDown: -10, PageUp: 10 }[e.key];
+    if (k) { e.preventDefault(); e.stopPropagation(); step(e.shiftKey ? k * 10 : k); }
+  });
+})();
+
+/* ---------- grabbing ---------- */
+function waitSeeked() { return video.seeking ? new Promise((r) => video.addEventListener("seeked", r, { once: true })) : Promise.resolve(); }
+const EXT = { jpeg: "jpg", png: "png", webp: "webp" };
+async function grab() {
+  const it = state.current; if (!it || !video.videoWidth) return;
+  if (!video.paused) { video.pause(); }
+  await waitSeeked();
+  const frame = frameAt(video.currentTime), t = frame / fps();
+  const c = document.createElement("canvas");
+  c.width = video.videoWidth; c.height = video.videoHeight;
+  c.getContext("2d").drawImage(video, 0, 0, c.width, c.height);
+  const fmt = settings.fmt;
+  let blob = await new Promise((r) => c.toBlob(r, "image/" + fmt, settings.quality / 100));
+  if (!blob) { toast("This browser can't encode " + fmt.toUpperCase() + ". Pick another format in settings.", true); return; }
+  const actualFmt = blob.type.split("/")[1] || fmt;
+  const m = it.meta || {};
+  if (settings.keepMeta && (m.created || m.loc) && (actualFmt === "jpeg" || actualFmt === "png")) {
+    blob = await embedMeta(blob, actualFmt, tiffBlock({ ms: (m.created || it.file.lastModified) + Math.round(t * 1000), tz: m.tz, loc: m.loc }));
+  }
+  const base = it.name.replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "-").slice(0, 60) || "frame";
+  const sec = Math.floor(frame / fps()), ff = frame - Math.round(sec * fps());
+  const name = `${base}_${pad(sec / 3600)}-${pad((sec / 60) % 60)}-${pad(sec % 60)}-${pad(Math.max(0, ff))}.${EXT[actualFmt] || actualFmt}`;
+  const shot = { id: nextId++, blob, name, fmt: actualFmt, url: URL.createObjectURL(blob), itemId: it.id, frame, t, w: c.width, h: c.height };
+  state.shots.push(shot);
+  const f = $("flash"); f.classList.remove("go"); void f.offsetWidth; f.classList.add("go");
+  renderShots(); renderPins();
+  if (settings.saveOnGrab) saveBlob(blob, name); else toast(`Grabbed frame ${frame + 1} · ${c.width}×${c.height}`);
+}
+function renderPins() {
+  const it = state.current, d = video.duration;
+  $("pins").replaceChildren(...state.shots.filter((s) => it && s.itemId === it.id && d).map((s) => {
+    const p = document.createElement("div"); p.className = "pin"; p.style.left = (s.t / d) * 100 + "%"; return p;
+  }));
+}
+const ICON = {
+  save: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14"/></svg>',
+  share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 15V3m0 0L8 7m4-4l4 4M6 11H5v9h14v-9h-1"/></svg>',
+  del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+};
+function renderShots() {
+  const row = $("shotRow");
+  const n = state.shots.length;
+  $("shotCount").textContent = n ? String(n) : "";
+  $("saveAll").hidden = n < 1; $("clearShots").hidden = n < 1;
+  if (!n) { row.replaceChildren($("shotsEmpty") || Object.assign(document.createElement("div"), { id: "shotsEmpty", className: "shots-empty", textContent: "Frames you grab appear here, ready to save." })); return; }
+  row.replaceChildren(...state.shots.slice().reverse().map((s) => {
+    const el = document.createElement("div"); el.className = "shot";
+    const item = state.items.find((i) => i.id === s.itemId);
+    el.innerHTML = `<div class="pic"><img alt="Frame ${s.frame + 1}"><span class="fmt">${s.fmt === "jpeg" ? "jpg" : s.fmt}</span><div class="acts">
+      ${canShareFiles ? `<button type="button" data-a="share" aria-label="Share">${ICON.share}</button>` : ""}
+      <button type="button" data-a="save" aria-label="Save">${ICON.save}</button>
+      <button type="button" data-a="del" aria-label="Remove">${ICON.del}</button></div></div>
+      <div class="cap"></div>`;
+    el.querySelector("img").src = s.url;
+    el.querySelector(".cap").textContent = `#${s.frame + 1} · ${s.w}×${s.h} · ${fmtBytes(s.blob.size)}`;
+    el.querySelector("img").addEventListener("click", () => { if (item && item !== state.current) openItem(item).then(() => seekFrame(s.frame)); else seekFrame(s.frame); });
+    el.querySelector('[data-a="save"]').addEventListener("click", () => saveBlob(s.blob, s.name));
+    el.querySelector('[data-a="share"]')?.addEventListener("click", () => shareBlob(s.blob, s.name));
+    el.querySelector('[data-a="del"]').addEventListener("click", () => {
+      state.shots = state.shots.filter((x) => x !== s); URL.revokeObjectURL(s.url); renderShots(); renderPins();
+    });
+    return el;
+  }));
+}
+async function saveAll() {
+  if (!state.shots.length) return;
+  if (state.shots.length === 1) return saveBlob(state.shots[0].blob, state.shots[0].name);
+  if (!window.JSZip) { for (const s of state.shots) await saveBlob(s.blob, s.name); return; }
+  const zip = new JSZip(), used = new Set();
+  for (const s of state.shots) { let n = s.name, i = 2; while (used.has(n)) n = s.name.replace(/(\.\w+)$/, `_${i++}$1`); used.add(n); zip.file(n, s.blob); }
+  const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
+  saveBlob(blob, `frames-${new Date().toISOString().slice(0, 10)}.zip`);
+}
+
+/* ---------- settings dialog ---------- */
+function syncSettingsUI() {
+  for (const b of $("fmtSeg").children) b.setAttribute("aria-pressed", String(b.dataset.fmt === settings.fmt));
+  for (const b of $("timeSeg").children) b.setAttribute("aria-pressed", String(b.dataset.tf === settings.timeFmt));
+  $("qualityField").hidden = settings.fmt === "png";
+  $("quality").value = settings.quality; $("qualityVal").textContent = settings.quality + "%";
+  $("keepMeta").checked = settings.keepMeta; $("saveOnGrab").checked = settings.saveOnGrab;
+  $("fmtHint").textContent = { jpeg: "Smallest files, works everywhere. Keeps date and location.", png: "Lossless and large. Keeps date and location.", webp: "Small files with good quality. Date and location are not kept." }[settings.fmt];
+}
+$("fmtSeg").addEventListener("click", (e) => { const f = e.target.closest("button")?.dataset.fmt; if (f) { settings.fmt = f; saveSettings(); syncSettingsUI(); } });
+$("timeSeg").addEventListener("click", (e) => { const f = e.target.closest("button")?.dataset.tf; if (f) { settings.timeFmt = f; saveSettings(); syncSettingsUI(); renderTime(video.currentTime); } });
+$("quality").addEventListener("input", (e) => { settings.quality = +e.target.value; $("qualityVal").textContent = settings.quality + "%"; saveSettings(); });
+$("keepMeta").addEventListener("change", (e) => { settings.keepMeta = e.target.checked; saveSettings(); });
+$("saveOnGrab").addEventListener("change", (e) => { settings.saveOnGrab = e.target.checked; saveSettings(); });
+$("settingsBtn").addEventListener("click", () => { syncSettingsUI(); $("settings").showModal(); });
+
+/* ---------- wiring ---------- */
+const pick = () => $("fileInput").click();
+$("importBtn").addEventListener("click", pick);
+$("emptyImport").addEventListener("click", pick);
+$("fileInput").addEventListener("change", (e) => { if (e.target.files.length) addFiles(e.target.files, { open: true }); e.target.value = ""; });
+$("backBtn").addEventListener("click", () => { video.pause(); $("app").dataset.view = "library"; });
+$("gridSquare").addEventListener("click", () => { settings.gridFit = false; saveSettings(); renderGrid(); });
+$("gridFit").addEventListener("click", () => { settings.gridFit = true; saveSettings(); renderGrid(); });
+$("back10").addEventListener("click", () => step(-10));
+$("back1").addEventListener("click", () => step(-1));
+$("fwd1").addEventListener("click", () => step(1));
+$("fwd10").addEventListener("click", () => step(10));
+$("playBtn").addEventListener("click", togglePlay);
+$("grabBtn").addEventListener("click", grab);
+$("saveAll").addEventListener("click", saveAll);
+$("clearShots").addEventListener("click", () => { state.shots.forEach((s) => URL.revokeObjectURL(s.url)); state.shots = []; renderShots(); renderPins(); });
+$("speed").addEventListener("change", (e) => { video.playbackRate = +e.target.value; });
+video.addEventListener("click", togglePlay);
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest("input, select, textarea, dialog") || e.metaKey || e.ctrlKey || e.altKey) return;
+  const n = e.shiftKey ? 10 : 1;
+  switch (e.key) {
+    case "ArrowLeft": e.preventDefault(); step(-n); break;
+    case "ArrowRight": e.preventDefault(); step(n); break;
+    case " ": if (e.target.closest("button")) return; e.preventDefault(); togglePlay(); break;
+    case "g": case "G": case "Enter": if (e.key === "Enter" && e.target.closest("button")) return; e.preventDefault(); grab(); break;
+    case "Home": e.preventDefault(); seekFrame(0); break;
+    case "End": e.preventDefault(); seekFrame(totalFrames() - 1); break;
+  }
+});
+
+let dragDepth = 0;
+window.addEventListener("dragenter", (e) => { if ([...(e.dataTransfer?.types || [])].includes("Files")) { dragDepth++; $("dropzone").hidden = false; } });
+window.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; $("dropzone").hidden = true; } });
+window.addEventListener("dragover", (e) => e.preventDefault());
+window.addEventListener("drop", (e) => { e.preventDefault(); dragDepth = 0; $("dropzone").hidden = true; if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files, { open: true }); });
+
+/* ---------- boot: open the bundled sample clip ---------- */
+renderGrid(); renderShots(); syncSettingsUI();
+fetch("sample.mp4").then((r) => r.ok ? r.blob() : Promise.reject()).then((b) => {
+  if (state.items.length) return;
+  return addFiles([new File([b], "sample-clip.mp4", { type: "video/mp4", lastModified: Date.now() })], { sample: true });
+}).catch(() => { $("empty").hidden = false; $("app").dataset.view = window.matchMedia("(max-width: 860px)").matches ? "library" : "editor"; });
+})();
+</script>
+</body>
+</html>
