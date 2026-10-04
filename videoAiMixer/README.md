@@ -1,4 +1,4 @@
-# Avatar Studio
+# Video AI Mixer
 
 Upload a video of a person talking → get an AI avatar of them that you can **text-chat** with and **video-call**, speaking in their cloned voice with their personality. The LLM and voice stack are **self-hosted**.
 
@@ -34,7 +34,7 @@ If a backend is unreachable, the app falls back rather than failing: echo replie
 Requires Docker; an NVIDIA GPU + NVIDIA Container Toolkit is strongly recommended (remove the `deploy:` blocks in `docker-compose.yml` to run on CPU, which is slow).
 
 ```bash
-cd avatar-studio
+cd videoAiMixer
 docker compose up -d --build
 docker compose exec ollama ollama pull llama3.1:8b
 open http://localhost:3000
@@ -54,13 +54,13 @@ ollama pull llama3.1:8b
 #   OLLAMA_CONTEXT_LENGTH=16384 ollama serve
 
 # 2. Voice server
-cd avatar-studio/voice-server
+cd videoAiMixer/voice-server
 python3.11 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app:app --port 8000
 
 # 3. App
-cd avatar-studio
+cd videoAiMixer
 npm install
 cp .env.example .env                    # point LLM_BASE_URL / LLM_MODEL / VOICE_SERVER_URL at your servers
 npm start                               # http://localhost:3000
@@ -73,7 +73,7 @@ Then: **Create an avatar** → pick a video (2–5 min of one person talking nat
 `deploy/aws/deploy.sh` launches one GPU EC2 instance (default `g5.xlarge`, about $1/hour) in the default VPC and runs the whole stack there, with Caddy in front for automatic HTTPS on a `<ip>.sslip.io` hostname. Phones only allow microphone and camera access over HTTPS. The app is password-protected (HTTP basic auth: any username, your password).
 
 ```bash
-cd avatar-studio
+cd videoAiMixer
 # needs the AWS CLI configured for the target account, with EC2, S3 and SSM read access
 APP_PASSWORD=pick-a-long-password AWS_REGION=us-east-1 ./deploy/aws/deploy.sh
 # ... prints https://1-2-3-4.sslip.io when it's up (first boot takes ~15-25 min)

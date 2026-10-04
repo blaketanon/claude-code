@@ -1,5 +1,5 @@
 """
-Self-hosted voice server for Avatar Studio.
+Self-hosted voice server for Video AI Mixer.
 
   GET    /health                     model/device status
   POST   /v1/audio/transcriptions    OpenAI-compatible speech-to-text (faster-whisper)
@@ -34,7 +34,7 @@ REF_SECONDS = int(os.getenv("REF_SECONDS", "15"))  # Chatterbox works best with 
 MAX_CHUNK_CHARS = 280
 
 VOICES_DIR.mkdir(parents=True, exist_ok=True)
-app = FastAPI(title="Avatar Studio voice server")
+app = FastAPI(title="Video AI Mixer voice server")
 
 
 def check_key(authorization: str | None = Header(default=None)):

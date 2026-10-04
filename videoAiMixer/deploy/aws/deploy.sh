@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Deploys Avatar Studio (app + Ollama + voice server + HTTPS) to one GPU EC2 instance.
+# Deploys Video AI Mixer (app + Ollama + voice server + HTTPS) to one GPU EC2 instance.
 #
-#   APP_PASSWORD=... ./deploy/aws/deploy.sh          # from the avatar-studio directory
+#   APP_PASSWORD=... ./deploy/aws/deploy.sh          # from the videoAiMixer directory
 #
-# Env: AWS_REGION (us-east-1), INSTANCE_TYPE (g5.xlarge, ~$1/hr), LLM_MODEL (llama3.1:8b), STACK (avatar-studio)
+# Env: AWS_REGION (us-east-1), INSTANCE_TYPE (g5.xlarge, ~$1/hr), LLM_MODEL (llama3.1:8b), STACK (video-ai-mixer)
 # Remove everything with ./deploy/aws/teardown.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -15,7 +15,7 @@ cd "$(dirname "$0")/../.."
 export AWS_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}" AWS_DEFAULT_REGION="${AWS_REGION}"
 INSTANCE_TYPE="${INSTANCE_TYPE:-g5.xlarge}"
 LLM_MODEL="${LLM_MODEL:-llama3.1:8b}"
-STACK="${STACK:-avatar-studio}"
+STACK="${STACK:-video-ai-mixer}"
 
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 echo "Deploying '$STACK' to account $ACCOUNT, region $AWS_REGION, instance $INSTANCE_TYPE"
@@ -39,7 +39,7 @@ VPC=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0
 SG=$(aws ec2 describe-security-groups --filters Name=group-name,Values="$STACK" Name=vpc-id,Values="$VPC" \
   --query 'SecurityGroups[0].GroupId' --output text)
 if [ "$SG" = "None" ]; then
-  SG=$(aws ec2 create-security-group --group-name "$STACK" --description "Avatar Studio HTTP/HTTPS" --vpc-id "$VPC" --query GroupId --output text)
+  SG=$(aws ec2 create-security-group --group-name "$STACK" --description "Video AI Mixer HTTP/HTTPS" --vpc-id "$VPC" --query GroupId --output text)
   for port in 80 443; do
     aws ec2 authorize-security-group-ingress --group-id "$SG" --protocol tcp --port $port --cidr 0.0.0.0/0 >/dev/null
   done

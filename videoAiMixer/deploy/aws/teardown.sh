@@ -2,7 +2,7 @@
 # Deletes everything deploy.sh created (instance, security group, deploy bucket). Avatar data on the instance is lost.
 set -euo pipefail
 export AWS_REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}" AWS_DEFAULT_REGION="${AWS_REGION}"
-STACK="${STACK:-avatar-studio}"
+STACK="${STACK:-video-ai-mixer}"
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 
 IDS=$(aws ec2 describe-instances --filters Name=tag:Name,Values="$STACK" Name=instance-state-name,Values=pending,running,stopping,stopped \

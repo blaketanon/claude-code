@@ -1,9 +1,9 @@
 #!/bin/bash
-# EC2 first-boot script (templated by deploy.sh). Log: /var/log/avatar-studio-setup.log
-exec > >(tee -a /var/log/avatar-studio-setup.log) 2>&1
+# EC2 first-boot script (templated by deploy.sh). Log: /var/log/video-ai-mixer-setup.log
+exec > >(tee -a /var/log/video-ai-mixer-setup.log) 2>&1
 set -euxo pipefail
 
-mkdir -p /opt/avatar-studio && cd /opt/avatar-studio
+mkdir -p /opt/video-ai-mixer && cd /opt/video-ai-mixer
 curl -fsSL "__BUNDLE_URL__" | tar -xz
 
 TOKEN=$(curl -fsS -X PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 300")

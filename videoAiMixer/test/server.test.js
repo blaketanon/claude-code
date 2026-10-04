@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "avatar-studio-test-"));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "video-ai-mixer-test-"));
 const port = 3900 + Math.floor(Math.random() * 90);
 const base = `http://127.0.0.1:${port}`;
 const auth = { authorization: "Basic " + Buffer.from("me:test-password").toString("base64") };

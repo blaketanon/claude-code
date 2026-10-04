@@ -25,7 +25,7 @@ if (APP_PASSWORD) {
     const password = scheme === "Basic" ? Buffer.from(encoded || "", "base64").toString().split(":").slice(1).join(":") : "";
     const given = crypto.createHash("sha256").update(password).digest();
     if (crypto.timingSafeEqual(given, expected)) return next();
-    res.set("WWW-Authenticate", 'Basic realm="Avatar Studio", charset="UTF-8"').status(401).send("Password required");
+    res.set("WWW-Authenticate", 'Basic realm="Video AI Mixer", charset="UTF-8"').status(401).send("Password required");
   });
 }
 
@@ -269,4 +269,4 @@ async function refreshFeatures() {
 await refreshFeatures();
 setInterval(refreshFeatures, 30_000).unref();
 
-app.listen(PORT, () => console.log(`Avatar Studio running at http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Video AI Mixer running at http://localhost:${PORT}`));
