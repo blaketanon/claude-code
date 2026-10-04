@@ -1,3 +1,5 @@
+import { sentenceSplitter } from "./lib/sentences.js";
+
 const $ = (sel, root = document) => root.querySelector(sel);
 const app = $("#app");
 let config = { features: {} };
@@ -208,8 +210,11 @@ async function renderAvatar(id) {
   }
 
   let inflight = null;
-  /** Sends one user turn; streams the reply into the chat log and, in a call, the caption. */
-  async function converse(text, mode) {
+  /**
+   * Sends one user turn; streams the reply into the chat log and, in a call, the caption.
+   * onSentence (optional) receives each complete sentence as soon as it has streamed in.
+   */
+  async function converse(text, mode, onSentence) {
     inflight?.abort();
     const ctrl = (inflight = new AbortController());
     const turn = { role: "user", content: text };
@@ -218,13 +223,16 @@ async function renderAvatar(id) {
     addMsg("user", text);
     const div = addMsg("assistant", "…");
     let acc = "";
+    const splitter = onSentence ? sentenceSplitter(onSentence) : null;
     try {
       const reply = await streamChat(id, history, mode, (t) => {
         acc += t;
+        splitter?.push(t);
         div.textContent = acc;
         if (mode === "voice") setCaption(acc);
         messages.scrollTop = messages.scrollHeight;
       }, ctrl.signal);
+      splitter?.flush();
       div.textContent = reply;
       addPlayButton(div, reply);
       history.push({ role: "assistant", content: reply });
@@ -271,17 +279,26 @@ async function renderAvatar(id) {
     stageImg.style.transform = `scale(${1 + level * 0.05}) translateY(${-level * 4}px)`;
   }
 
+  /** Asks the server for this text in the cloned voice (and lip-synced video when configured). */
+  async function fetchSpeech(text, video) {
+    try {
+      return await api(`/api/avatars/${id}/speak`, { method: "POST", body: { text, video } });
+    } catch (err) {
+      console.warn("speak failed, falling back to browser voice", err);
+      return { audioUrl: null, videoUrl: null };
+    }
+  }
+
   /** Play cloned-voice audio, lip-synced video, or browser TTS - whichever is available. */
   async function speakAndPlay(text, { video, isCurrent = () => true }) {
     stopPlayback();
     callStatus.textContent = video && config.features.video ? "Rendering video…" : "Generating voice…";
-    let result = { audioUrl: null, videoUrl: null };
-    try {
-      result = await api(`/api/avatars/${id}/speak`, { method: "POST", body: { text, video } });
-    } catch (err) {
-      console.warn("speak failed, falling back to browser voice", err);
-    }
+    const result = await fetchSpeech(text, video);
     if (!isCurrent()) return; // the user spoke again while this was rendering
+    await playResult(result, text);
+  }
+
+  async function playResult(result, text) {
     callStatus.textContent = result.videoError ? "Video failed - voice only" : "";
     stage.classList.add("speaking");
     try {
@@ -412,10 +429,18 @@ async function renderAvatar(id) {
     stopPlayback();
     callStatus.textContent = "Thinking…";
     setCaption("");
-    const reply = await converse(text, "voice");
-    if (!isCurrent()) return;
-    callStatus.textContent = "";
-    if (reply) await speakAndPlay(reply, { video: true, isCurrent });
+    // Speak sentence by sentence: each sentence's audio is requested as soon as it streams in
+    // (while the LLM writes the next), and clips play back strictly in order.
+    let playback = Promise.resolve();
+    const onSentence = (sentence) => {
+      const speech = fetchSpeech(sentence, true);
+      playback = playback.then(async () => {
+        const result = await speech;
+        if (isCurrent()) await playResult(result, sentence);
+      });
+    };
+    await converse(text, "voice", onSentence);
+    await playback;
     if (isCurrent()) callStatus.textContent = "";
   }
 

@@ -131,9 +131,10 @@ To use a different TTS engine (XTTS, F5-TTS, Fish Speech, OpenVoice...), replace
 - `server/media.js`: ffmpeg audio and portrait extraction
 - `voice-server/`: self-hosted STT + voice cloning + TTS
 - `public/`: single-page UI (no build step)
+- `test/`, `voice-server/test_app.py`: tests (`npm test`; `pytest` in `voice-server/`). Model engines are faked, so neither needs a GPU or downloads.
 
 ## Limits and next steps
 
 - **Lip-sync is still hosted (D-ID).** To make video self-hosted too, add a lip-sync engine such as MuseTalk, SadTalker or LivePortrait behind a `/lipsync` endpoint and swap `did.js`. Without D-ID you get the audio-reactive portrait.
-- Each call reply is generated in full before it is spoken. For lower latency, stream LLM sentences into TTS one at a time.
+- Call replies are voiced sentence by sentence as the LLM streams them, so the avatar starts talking after the first sentence. With D-ID each sentence is also a separate video render, which adds a few seconds per sentence.
 - Data is stored on local disk and there are no user accounts, only the shared `APP_PASSWORD`. Set it on any shared deploy, and keep the voice server off the public internet (or set `VOICE_SERVER_API_KEY`).

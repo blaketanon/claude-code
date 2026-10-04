@@ -15,6 +15,15 @@ LLM_MODEL=__LLM_MODEL__
 SITE_ADDRESS=${PUBLIC_IP//./-}.sslip.io
 ENV
 
+# The Deep Learning AMI ships Docker + the NVIDIA runtime; make sure the compose plugin is there too.
+if ! docker compose version >/dev/null 2>&1; then
+  mkdir -p /usr/local/lib/docker/cli-plugins
+  curl -fsSL https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-x86_64 \
+    -o /usr/local/lib/docker/cli-plugins/docker-compose
+  chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+fi
+nvidia-smi || echo "WARNING: no GPU visible - models will run on CPU (slow)"
+
 docker compose -f docker-compose.yml -f deploy/aws/compose.aws.yml up -d --build
 # Pull the LLM once Ollama is listening.
 for i in $(seq 1 60); do docker compose exec -T ollama ollama list && break; sleep 5; done

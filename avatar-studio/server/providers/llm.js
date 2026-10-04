@@ -50,16 +50,28 @@ async function post(body, signal) {
   return res;
 }
 
-/** Reachability check used to decide whether to fall back to demo mode. */
+let lastPingWarning = "";
+
+/**
+ * Readiness check used to decide whether to fall back to demo mode: the server must answer AND
+ * serve the configured model (Ollama lists only pulled models, so this waits out `ollama pull`).
+ * Single-model servers such as llama.cpp ignore the model name, so one listed model also counts.
+ */
 export async function ping() {
   const res = await fetch(`${llm.baseUrl}/models`, { headers: headers(), signal: AbortSignal.timeout(3000) });
-  return res.ok;
+  if (!res.ok) return false;
+  const ids = ((await res.json().catch(() => ({}))).data || []).map((m) => m.id);
+  const ready = ids.includes(llm.model) || ids.length === 1;
+  const warning = ready ? "" : `LLM server is up but model "${llm.model}" is not available yet (has: ${ids.join(", ") || "none"})`;
+  if (warning && warning !== lastPingWarning) console.warn(warning);
+  lastPingWarning = warning;
+  return ready;
 }
 
 // Reasoning models (Qwen3, DeepSeek-R1, ...) may emit <think>...</think> in the content.
 const stripThink = (s) => s.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trim();
 
-function parseJsonLoose(text) {
+export function parseJsonLoose(text) {
   const cleaned = stripThink(text).replace(/^```(?:json)?\s*|\s*```$/g, "");
   try {
     return JSON.parse(cleaned);
@@ -184,7 +196,7 @@ export function sanitizeHistory(history, maxTurns = 30) {
 }
 
 /** Hides <think>...</think> spans from a token stream, even when tags are split across chunks. */
-function thinkFilter(emit) {
+export function thinkFilter(emit) {
   let buf = "";
   let inThink = false;
   return (chunk) => {
