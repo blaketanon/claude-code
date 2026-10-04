@@ -1,8 +1,9 @@
 import express from "express";
 import multer from "multer";
 import path from "node:path";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
-import { PORT, ROOT, DATA_DIR, MAX_UPLOAD_MB, DEMO_MODE, features, llm as llmConfig, voice as voiceConfig } from "./config.js";
+import { PORT, ROOT, DATA_DIR, MAX_UPLOAD_MB, DEMO_MODE, APP_PASSWORD, features, llm as llmConfig, voice as voiceConfig } from "./config.js";
 import * as store from "./store.js";
 import { runPipeline, initialSteps } from "./pipeline.js";
 import * as llm from "./providers/llm.js";
@@ -15,6 +16,19 @@ const CONSENT_STATEMENT =
   "I am the person in this video, or I have their explicit permission to create an AI avatar, voice clone and personality model of them.";
 
 const app = express();
+app.set("trust proxy", "loopback, uniquelocal"); // behind Caddy in the AWS deploy
+
+if (APP_PASSWORD) {
+  const expected = crypto.createHash("sha256").update(APP_PASSWORD).digest();
+  app.use((req, res, next) => {
+    const [scheme, encoded] = (req.headers.authorization || "").split(" ");
+    const password = scheme === "Basic" ? Buffer.from(encoded || "", "base64").toString().split(":").slice(1).join(":") : "";
+    const given = crypto.createHash("sha256").update(password).digest();
+    if (crypto.timingSafeEqual(given, expected)) return next();
+    res.set("WWW-Authenticate", 'Basic realm="Avatar Studio", charset="UTF-8"').status(401).send("Password required");
+  });
+}
+
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static(path.join(ROOT, "public")));
 

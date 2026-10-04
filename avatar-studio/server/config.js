@@ -10,6 +10,8 @@ export const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(ROOT, "da
 export const PORT = Number(process.env.PORT || 3000);
 export const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 500);
 export const DEMO_MODE = process.env.DEMO_MODE === "1";
+// When set, every request needs HTTP basic auth (any username, this password). Set it on any public deploy.
+export const APP_PASSWORD = process.env.APP_PASSWORD || "";
 
 // Any OpenAI-compatible chat server. Default: Ollama on this machine.
 export const llm = {

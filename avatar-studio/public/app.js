@@ -192,6 +192,7 @@ async function renderAvatar(id) {
     b.textContent = "▶";
     b.title = "Hear it in their voice";
     b.onclick = async () => {
+      unlockMedia();
       b.disabled = true;
       try { await speakAndPlay(text, { video: false }); } finally { b.disabled = false; }
     };
@@ -305,28 +306,75 @@ async function renderAvatar(id) {
     });
   }
 
+  // One persistent <audio> element + analyser. Mobile Safari only lets an element play sound
+  // later (after a network wait) if it was first played inside a tap, so unlockMedia() primes
+  // these on the first gesture and every reply reuses them.
+  const audioEl = new Audio();
+  audioEl.preload = "auto";
+  let analyser;
+  let mediaUnlocked = false;
+
+  function silentWavUrl() {
+    const n = 800; // 0.1s at 8kHz, 8-bit mono
+    const buf = new DataView(new ArrayBuffer(44 + n));
+    const str = (o, t) => [...t].forEach((c, i) => buf.setUint8(o + i, c.charCodeAt(0)));
+    str(0, "RIFF"); buf.setUint32(4, 36 + n, true); str(8, "WAVEfmt ");
+    buf.setUint32(16, 16, true); buf.setUint16(20, 1, true); buf.setUint16(22, 1, true);
+    buf.setUint32(24, 8000, true); buf.setUint32(28, 8000, true); buf.setUint16(32, 1, true); buf.setUint16(34, 8, true);
+    str(36, "data"); buf.setUint32(40, n, true);
+    for (let i = 0; i < n; i++) buf.setUint8(44 + i, 128);
+    return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+  }
+
+  /** Call synchronously from a tap/click handler. */
+  function unlockMedia() {
+    try {
+      if (!audioCtx) {
+        audioCtx = new AudioContext();
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        audioCtx.createMediaElementSource(audioEl).connect(analyser).connect(audioCtx.destination);
+      }
+      audioCtx.resume().catch(() => {});
+    } catch (err) {
+      console.warn("Web Audio unavailable", err);
+    }
+    if (mediaUnlocked) return;
+    mediaUnlocked = true;
+    const silent = silentWavUrl();
+    audioEl.src = silent;
+    audioEl.play().catch(() => {});
+    stageVideo.src = silent; // the (hidden) video element plays audio-only sources too
+    stageVideo.play().then(() => stageVideo.pause(), () => {});
+    if ("speechSynthesis" in window) speechSynthesis.speak(new SpeechSynthesisUtterance(""));
+  }
+
   function playAudio(url) {
     return new Promise((resolve) => {
-      audioCtx ??= new AudioContext();
-      const audio = new Audio(url);
-      const src = audioCtx.createMediaElementSource(audio);
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 512;
-      src.connect(analyser).connect(audioCtx.destination);
-      const buf = new Uint8Array(analyser.fftSize);
+      const buf = analyser ? new Uint8Array(analyser.fftSize) : null;
       let raf;
       const tick = () => {
-        analyser.getByteTimeDomainData(buf);
-        let sum = 0;
-        for (const v of buf) sum += ((v - 128) / 128) ** 2;
-        animatePortrait(Math.min(1, Math.sqrt(sum / buf.length) * 4));
+        if (buf) {
+          analyser.getByteTimeDomainData(buf);
+          let sum = 0;
+          for (const v of buf) sum += ((v - 128) / 128) ** 2;
+          animatePortrait(Math.min(1, Math.sqrt(sum / buf.length) * 4));
+        }
         raf = requestAnimationFrame(tick);
       };
-      const done = () => { cancelAnimationFrame(raf); audio.pause(); src.disconnect(); resolve(); };
-      audio.onended = done;
-      audio.onerror = done;
+      let finished = false;
+      const done = () => {
+        if (finished) return;
+        finished = true;
+        cancelAnimationFrame(raf);
+        audioEl.pause();
+        resolve();
+      };
+      audioEl.onended = done;
+      audioEl.onerror = done;
       stopPlayback = done;
-      audioCtx.resume().then(() => audio.play()).then(tick, done);
+      audioEl.src = url;
+      (audioCtx ? audioCtx.resume() : Promise.resolve()).then(() => audioEl.play()).then(tick, done);
     });
   }
 
@@ -426,6 +474,7 @@ async function renderAvatar(id) {
   }
 
   startBtn.addEventListener("click", async () => {
+    unlockMedia();
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
     } catch {
@@ -484,17 +533,18 @@ async function renderAvatar(id) {
     }
   });
 
-  talkBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); startTalking(); });
+  talkBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); unlockMedia(); startTalking(); });
   talkBtn.addEventListener("pointerup", stopTalking);
   talkBtn.addEventListener("pointerleave", stopTalking);
   const isTyping = () => ["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName);
-  const onKeyDown = (e) => { if (e.code === "Space" && inCall && !e.repeat && !isTyping()) { e.preventDefault(); startTalking(); } };
+  const onKeyDown = (e) => { if (e.code === "Space" && inCall && !e.repeat && !isTyping()) { e.preventDefault(); unlockMedia(); startTalking(); } };
   const onKeyUp = (e) => { if (e.code === "Space" && inCall && !isTyping()) { e.preventDefault(); stopTalking(); } };
   document.addEventListener("keydown", onKeyDown);
   document.addEventListener("keyup", onKeyUp);
 
   callComposer.addEventListener("submit", async (e) => {
     e.preventDefault();
+    unlockMedia();
     const text = e.target.text.value.trim();
     e.target.text.value = "";
     await takeTurn(text);

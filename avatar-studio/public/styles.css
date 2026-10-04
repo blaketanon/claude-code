@@ -92,6 +92,6 @@ button.danger { color: var(--danger); }
 @media (max-width: 860px) {
   .grid-2, .room { grid-template-columns: 1fr; }
   .side .portrait { max-width: 200px; }
-  .main { min-height: 0; }
+  .main { min-height: 0; order: -1; } /* call and chat first on phones */
   .msg { max-width: 92%; }
 }

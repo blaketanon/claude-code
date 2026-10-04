@@ -68,6 +68,20 @@ npm start                               # http://localhost:3000
 
 Then: **Create an avatar** → pick a video (2–5 min of one person talking naturally, face visible) → tick the consent box → **Build avatar**. When it says *ready*, use the **Chat** tab or the **Video call** tab (hold the button or Space to talk, or type).
 
+### Option C: AWS (test from your phone)
+
+`deploy/aws/deploy.sh` launches one GPU EC2 instance (default `g5.xlarge`, about $1/hour) in the default VPC and runs the whole stack there, with Caddy in front for automatic HTTPS on a `<ip>.sslip.io` hostname. Phones only allow microphone and camera access over HTTPS. The app is password-protected (HTTP basic auth: any username, your password).
+
+```bash
+cd avatar-studio
+# needs the AWS CLI configured for the target account, with EC2, S3 and SSM read access
+APP_PASSWORD=pick-a-long-password AWS_REGION=us-east-1 ./deploy/aws/deploy.sh
+# ... prints https://1-2-3-4.sslip.io when it's up (first boot takes ~15-25 min)
+./deploy/aws/teardown.sh    # stop paying: terminates the instance, deletes the security group and bucket
+```
+
+New AWS accounts often have a quota of 0 for GPU instances ("Running On-Demand G and VT instances"). If launching fails with `VcpuLimitExceeded`, request a quota of 4+ vCPUs in Service Quotas.
+
 ### Choosing a model
 
 Persona quality is mostly the LLM. Rough guide:
@@ -122,4 +136,4 @@ To use a different TTS engine (XTTS, F5-TTS, Fish Speech, OpenVoice...), replace
 
 - **Lip-sync is still hosted (D-ID).** To make video self-hosted too, add a lip-sync engine such as MuseTalk, SadTalker or LivePortrait behind a `/lipsync` endpoint and swap `did.js`. Without D-ID you get the audio-reactive portrait.
 - Each call reply is generated in full before it is spoken. For lower latency, stream LLM sentences into TTS one at a time.
-- Data is stored on local disk with no user accounts; add auth before deploying anywhere shared, and keep the voice server off the public internet (or set `VOICE_SERVER_API_KEY`).
+- Data is stored on local disk and there are no user accounts, only the shared `APP_PASSWORD`. Set it on any shared deploy, and keep the voice server off the public internet (or set `VOICE_SERVER_API_KEY`).
