@@ -1,0 +1,44 @@
+name: video-ai-mixer
+
+on:
+  push:
+    paths: ["videoAiMixer/**", ".github/workflows/video-ai-mixer.yml"]
+  pull_request:
+    paths: ["videoAiMixer/**", ".github/workflows/video-ai-mixer.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: videoAiMixer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: videoAiMixer/package-lock.json
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: npm ci
+      - run: npm test
+      - name: Check deploy scripts parse
+        run: for f in deploy/aws/*.sh; do bash -n "$f"; done
+
+  voice-server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: videoAiMixer/voice-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      # Model packages (torch, chatterbox, faster-whisper) are not needed: the tests fake the engines.
+      - run: pip install fastapi "uvicorn[standard]" python-multipart httpx pytest
+      - run: pytest -q

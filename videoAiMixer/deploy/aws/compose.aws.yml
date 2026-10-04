@@ -1,0 +1,23 @@
+# Overlay for the AWS deploy: HTTPS via Caddy (automatic Let's Encrypt) in front of the app.
+services:
+  app:
+    # Port 3000 stays published by the base file but the security group only opens 80/443.
+    environment:
+      APP_PASSWORD: ${APP_PASSWORD:?set APP_PASSWORD}
+    restart: unless-stopped
+  ollama:
+    restart: unless-stopped
+  voice:
+    restart: unless-stopped
+  caddy:
+    image: caddy:2
+    ports: ["80:80", "443:443"]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS}
+    volumes:
+      - ./deploy/aws/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on: [app]
+    restart: unless-stopped
+volumes:
+  caddy-data:

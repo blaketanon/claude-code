@@ -1,0 +1,9 @@
+{$SITE_ADDRESS} {
+	encode gzip
+	request_body {
+		max_size 600MB
+	}
+	reverse_proxy app:3000 {
+		flush_interval -1 # stream chat replies (server-sent events) immediately
+	}
+}

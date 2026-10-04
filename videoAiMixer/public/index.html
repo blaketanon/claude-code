@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video AI Mixer</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a href="#/" class="brand">Video AI Mixer</a>
+    <div id="modes" class="modes"></div>
+  </header>
+
+  <main id="app"></main>
+
+  <!-- Home: list + create -->
+  <template id="tpl-home">
+    <section class="grid-2">
+      <div class="card">
+        <h2>Create an avatar</h2>
+        <p class="muted">Upload a video of someone talking naturally - 2 to 5 minutes, one speaker, face visible, little background noise works best.</p>
+        <form id="create-form">
+          <label>Name <input name="name" required maxlength="80" placeholder="e.g. Blake" /></label>
+          <label>Video <input name="video" type="file" accept="video/*,audio/*" required /></label>
+          <video id="preview" class="preview hidden" controls muted playsinline></video>
+          <label>Portrait image <span class="muted">(optional - otherwise a frame is taken from the video)</span>
+            <input name="portrait" type="file" accept="image/*" />
+          </label>
+          <label>About this person <span class="muted">(optional - facts, opinions or style notes the video doesn't cover)</span>
+            <textarea name="notes" rows="3" maxlength="4000" placeholder="Grew up in Denver, works in fintech, loves terrible puns..."></textarea>
+          </label>
+          <label class="consent">
+            <input name="consent" type="checkbox" required />
+            <span id="consent-text"></span>
+          </label>
+          <button type="submit" class="primary">Build avatar</button>
+          <div id="upload-progress" class="progress hidden"><div></div></div>
+          <p id="create-error" class="error"></p>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Your avatars</h2>
+        <ul id="avatar-list" class="avatar-list"></ul>
+      </div>
+    </section>
+  </template>
+
+  <!-- Avatar room: training status, chat, video call -->
+  <template id="tpl-avatar">
+    <section class="room">
+      <aside class="card side">
+        <img class="portrait" alt="" />
+        <h2 class="name"></h2>
+        <p class="status-pill"></p>
+        <ol class="steps"></ol>
+        <div class="persona hidden">
+          <h3>Learned personality</h3>
+          <p class="summary"></p>
+          <div class="chips traits"></div>
+          <p class="muted style"></p>
+        </div>
+        <div class="side-actions">
+          <button class="retrain">Retrain</button>
+          <button class="delete danger">Delete avatar &amp; voice</button>
+        </div>
+      </aside>
+
+      <div class="card main">
+        <nav class="tabs">
+          <button data-tab="chat" class="active">Chat</button>
+          <button data-tab="call">Video call</button>
+        </nav>
+
+        <div class="tab tab-chat">
+          <div class="messages"></div>
+          <form class="composer">
+            <input name="text" autocomplete="off" placeholder="Say something..." />
+            <button class="primary">Send</button>
+          </form>
+        </div>
+
+        <div class="tab tab-call hidden">
+          <div class="stage">
+            <img class="stage-portrait" alt="" />
+            <video class="stage-video hidden" playsinline></video>
+            <video class="selfview hidden" autoplay muted playsinline></video>
+            <span class="ai-badge">AI-generated avatar</span>
+            <div class="caption"></div>
+            <div class="call-status"></div>
+          </div>
+          <div class="call-controls">
+            <button class="start-call primary">Start call</button>
+            <button class="talk hidden" title="Hold to talk (or hold Space)">Hold to talk</button>
+            <button class="camera hidden">Camera on</button>
+            <button class="end-call hidden danger">End</button>
+          </div>
+          <form class="composer call-composer hidden">
+            <input name="text" autocomplete="off" placeholder="...or type to talk" />
+            <button>Send</button>
+          </form>
+        </div>
+      </div>
+    </section>
+  </template>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
