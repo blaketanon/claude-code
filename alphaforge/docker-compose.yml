@@ -1,0 +1,13 @@
+services:
+  alphaforge:
+    build: .
+    env_file: .env
+    environment:
+      ALPHAFORGE_DATA_DIR: /app/data
+      ALPHAFORGE_DB_URL: sqlite:////app/data/alphaforge.db
+    ports: ["8000:8000"]
+    volumes: ["alphaforge-data:/app/data"]
+    restart: unless-stopped
+
+volumes:
+  alphaforge-data:
