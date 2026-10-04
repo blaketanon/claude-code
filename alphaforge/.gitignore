@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+*.db
+*.parquet
+.pytest_cache/
+.ruff_cache/
+admin-ui/node_modules/
+admin-ui/dist/
+.env
+mlruns/
+*.egg-info/
+admin-ui/tsconfig.tsbuildinfo
