@@ -48,35 +48,46 @@ def txn_map(run):
     return {str(t.get("id")): t for t in run.get("transactions") or []}
 
 
+def hints_of(t):
+    h = t.get("hints")
+    return h if isinstance(h, dict) else {}
+
+
 def ocr_tag_of(t):
-    """Best effort: the Ocrolus tag carried on a transaction, whichever field
-    name the run used."""
-    for k in ("ocrTag", "ocrolusTag", "ocr_tag", "ocrCategory", "category", "tag_ocr", "ocrolus"):
-        v = t.get(k)
-        if isinstance(v, dict):
-            v = v.get("tag") or v.get("category") or v.get("name")
-        if v:
-            return str(v)
+    """Ocrolus's collapsed tag for a transaction. GustavoAI writes it to
+    transactions[].hints.ocr_tag (mca, bank_cash_advance, loan, bank_loan,
+    equipment_lease, factoring, sba, other_loan, return, nsf_paid, payroll, tax,
+    insurance, credit_card, merchant_service, internal_transfer, p2p, wire or
+    empty)."""
+    h = hints_of(t)
+    tag = h.get("ocr_tag")
+    if tag:
+        return str(tag)
+    if h.get("fintech_mca") is True:
+        return "mca"
     return ""
 
 
 def ocr_is_mca(t, verdicts, tid):
+    """Only Ocrolus's fintech_mca flag counts as MCA, matching GustavoAI's own
+    comparison. bank_cash_advance is a separate Ocrolus tag."""
+    h = hints_of(t)
+    if "fintech_mca" in h:
+        return h.get("fintech_mca") is True
+    if h.get("ocr_tag"):
+        return h["ocr_tag"] == "mca"
     v = verdicts.get(tid)
-    if isinstance(v, dict) and "ocrMca" in v:
-        return bool(v["ocrMca"])
-    for k in ("ocrMca", "ocr_mca", "ocrolusMca", "isMcaOcr"):
-        if k in t:
-            return bool(t[k])
-    tag = ocr_tag_of(t).lower()
-    return "mca" in tag or "merchant cash" in tag or "cash advance" in tag
+    return v in ("agree", "ocr_only")
+
+
+VERDICT_NAMES = {"oursOnly": "ours_only", "ocrOnly": "ocr_only"}
 
 
 def verdict_of(v):
-    if isinstance(v, str):
-        return v
     if isinstance(v, dict):
-        return v.get("verdict") or v.get("kind") or ""
-    return ""
+        v = v.get("verdict") or v.get("kind") or ""
+    v = str(v or "")
+    return VERDICT_NAMES.get(v, v)
 
 
 def analyse(runs):
@@ -91,6 +102,9 @@ def analyse(runs):
     tag_mix = Counter()
     ocr_tag_mix = Counter()
     confusion = Counter()  # (ours_mca, ocr_mca)
+    crosstab = Counter()   # (ocrolus_tag, gustavo_tag)
+    possible_split = Counter()  # possible_mca_pull by whether Ocrolus said MCA
+    source_mix = Counter()  # rules vs claude, and how often claude changed the rules tag
 
     for run in runs:
         rid = run.get("id")
@@ -123,10 +137,17 @@ def analyse(runs):
             ours_mca = ours_tag in MCA_TAGS
             ocr_mca = ocr_is_mca(t, verdicts, tid)
             confusion[(ours_mca, ocr_mca)] += 1
+            crosstab[(otag or "(none)", ours_tag or "untagged")] += 1
+            if ours_tag == "possible_mca_pull":
+                possible_split["ocrolus_mca" if ocr_mca else "ocrolus_not_mca"] += 1
+            if lab:
+                source_mix[lab.get("source") or "unknown"] += 1
             v = verdict_of(verdicts.get(tid))
             if v:
                 verdict_mix[v] += 1
-            funder = lab.get("funder") or ""
+            funder = lab.get("funder") or hints_of(t).get("counterparty") or ""
+            if funder == "No Advance":
+                funder = lab.get("counterparty") or hints_of(t).get("counterparty") or funder
             if funder:
                 key = "agree" if ours_mca == ocr_mca else ("oursOnly" if ours_mca else "ocrOnly")
                 per_funder[funder][key] += 1
@@ -136,25 +157,35 @@ def analyse(runs):
                     "run": rid, "txn": tid, "date": t.get("date"), "amount": t.get("amount"),
                     "type": t.get("type"), "description": (t.get("description") or "")[:120],
                     "gustavo_tag": ours_tag, "gustavo_funder": funder, "gustavo_source": lab.get("source"),
-                    "ocrolus_tag": otag, "ocrolus_mca": ocr_mca, "verdict": v,
+                    "ocrolus_tag": otag, "ocrolus_mca": ocr_mca, "ocrolus_counterparty": hints_of(t).get("counterparty"),
+                    "ocrolus_source": hints_of(t).get("fintech_mca_source"), "verdict": v,
                     "reason": (lab.get("reason") or "")[:200],
                 })
 
-        # human feedback: who was right when a reviewer looked
+        # human feedback: label_feedback rows {txn_id, correct, corrected_tag,
+        # corrected_funder, reviewer, note}. Keep the latest per transaction.
+        latest = {}
         for fb in run.get("feedback") or []:
-            tid = str(fb.get("txnId") or fb.get("transactionId") or fb.get("id") or "")
-            ok = fb.get("correct")
-            if ok is None:
-                ok = str(fb.get("verdict") or fb.get("decision") or "").lower() in ("correct", "agree", "yes", "right")
+            tid = str(fb.get("txn_id") or fb.get("txnId") or "")
+            if tid and (tid not in latest or str(fb.get("created_at") or "") >= str(latest[tid].get("created_at") or "")):
+                latest[tid] = fb
+        for tid, fb in latest.items():
+            ok = bool(fb.get("correct"))
             lab = label_by_id.get(tid) or {}
             t = tmap.get(tid) or {}
-            ours_mca = (lab.get("tag") or "") in MCA_TAGS
+            ours_tag = lab.get("tag") or ""
+            truth_tag = ours_tag if ok else (fb.get("corrected_tag") or "")
+            truth_mca = truth_tag in MCA_TAGS
+            ours_mca = ours_tag in MCA_TAGS
             ocr_mca = ocr_is_mca(t, verdicts, tid)
             feedback_scores["reviewed"] += 1
             feedback_scores["gustavo_correct" if ok else "gustavo_wrong"] += 1
-            if ours_mca != ocr_mca:
+            if truth_tag:
+                feedback_scores["gustavo_mca_right" if ours_mca == truth_mca else "gustavo_mca_wrong"] += 1
+                feedback_scores["ocrolus_mca_right" if ocr_mca == truth_mca else "ocrolus_mca_wrong"] += 1
+            if ours_mca != ocr_mca and truth_tag:
                 feedback_scores["disputed_reviewed"] += 1
-                feedback_scores["disputed_gustavo_right" if ok else "disputed_ocrolus_right"] += 1
+                feedback_scores["disputed_gustavo_right" if ours_mca == truth_mca else "disputed_ocrolus_right"] += 1
 
         # advances
         for a in report.get("advances") or []:
@@ -205,6 +236,7 @@ def analyse(runs):
         "totals": totals, "verdict_mix": verdict_mix, "per_run": per_run, "per_funder": per_funder,
         "disagreements": disagreements, "advances": advances, "balances": balances,
         "feedback": feedback_scores, "tag_mix": tag_mix, "ocr_tag_mix": ocr_tag_mix, "confusion": confusion,
+        "crosstab": crosstab, "possible_split": possible_split, "source_mix": source_mix,
     }
 
 
@@ -223,7 +255,7 @@ def write_csv(path, rows, fields=None):
         w.writerows(rows)
 
 
-def write_report(res, out, index, review_stats):
+def write_report(res, out, index, review_stats, usage=None):
     t = res["totals"]
     c = res["confusion"]
     tp, fp, fn, tn = c[(True, True)], c[(True, False)], c[(False, True)], c[(False, False)]
@@ -254,15 +286,46 @@ def write_report(res, out, index, review_stats):
     lines.append(f"| GustavoAI: MCA | {tp} | {fp} |")
     lines.append(f"| GustavoAI: not MCA | {fn} | {tn} |\n")
     if res["verdict_mix"]:
-        lines.append("Verdict mix: " + ", ".join(f"{k}: {v}" for k, v in res["verdict_mix"].most_common()) + "\n")
+        lines.append("Verdict mix (every transaction): " + ", ".join(f"{k}: {v}" for k, v in res["verdict_mix"].most_common()) + "\n")
+    if res["source_mix"]:
+        lines.append("Final tag decided by: " + ", ".join(f"{k}: {v}" for k, v in res["source_mix"].most_common()) + "\n")
+    lines.append("### Ocrolus tag versus GustavoAI tag\n")
+    lines.append("Rows are Ocrolus's collapsed tag (only `mca` is the fintech_mca flag), columns GustavoAI's final tag.\n")
+    ct = res["crosstab"]
+    gtags = [k for k, _ in Counter({g: n for (_, g), n in ct.items()}).most_common()]
+    otags = [k for k, _ in Counter({o: n for (o, _), n in ct.items()}).most_common()]
+    lines.append("| Ocrolus \\ GustavoAI | " + " | ".join(gtags) + " | total |")
+    lines.append("|---|" + "---|" * (len(gtags) + 1))
+    for o in otags:
+        row = [ct[(o, g)] for g in gtags]
+        lines.append(f"| {o} | " + " | ".join(str(x) for x in row) + f" | {sum(row)} |")
+    lines.append("")
     lines.append("## Who was right when a human looked\n")
     if fb["reviewed"]:
-        lines.append(f"- Transactions with reviewer feedback: {fb['reviewed']} (GustavoAI correct {fb['gustavo_correct']}, wrong {fb['gustavo_wrong']})")
+        lines.append(f"- Transactions with reviewer feedback: {fb['reviewed']} (GustavoAI tag confirmed {fb['gustavo_correct']}, corrected {fb['gustavo_wrong']})")
+        lines.append(f"- Against the reviewer's MCA / not-MCA call: GustavoAI right {fb['gustavo_mca_right']}, wrong {fb['gustavo_mca_wrong']}; Ocrolus right {fb['ocrolus_mca_right']}, wrong {fb['ocrolus_mca_wrong']}")
         lines.append(f"- Of the reviewed transactions where the two systems disagreed ({fb['disputed_reviewed']}): GustavoAI right {fb['disputed_gustavo_right']}, Ocrolus right {fb['disputed_ocrolus_right']}\n")
     else:
         lines.append("- No reviewer feedback recorded yet, so disagreements cannot be adjudicated from the data alone.\n")
     if review_stats:
-        lines.append(f"Review statistics endpoint totals: `{json.dumps(review_stats.get('totals'))}`\n")
+        rt = review_stats.get("totals") or {}
+        lines.append("### The app's own cross-run review statistics (all runs in Postgres)\n")
+        lines.append("| Metric | Value |\n|---|---|")
+        for k in ("runs", "labels", "ours_mca", "ocr_mca", "reviewed", "correct", "wrong"):
+            lines.append(f"| {k} | {rt.get(k)} |")
+        lines.append(f"| Claude changed the rules tag | {review_stats.get('claudeChanged')} |")
+        vs = review_stats.get("verdicts") or []
+        if vs:
+            lines.append("\nVerdicts: " + ", ".join(f"{v.get('verdict')}: {v.get('n')}" for v in vs))
+        fs = review_stats.get("funders") or []
+        if fs:
+            lines.append("\n| Funder (app stats) | n | GustavoAI MCA | Ocrolus MCA | agree | GustavoAI only | Ocrolus only | reviewer said wrong |\n|---|---|---|---|---|---|---|---|")
+            for f in fs[:30]:
+                lines.append(f"| {f.get('funder')} | {f.get('n')} | {f.get('ours_mca')} | {f.get('ocr_mca')} | {f.get('agree')} | {f.get('ours_only')} | {f.get('ocr_only')} | {f.get('wrong')} |")
+        lines.append("")
+    if usage and usage.get("total"):
+        u = usage["total"]
+        lines.append(f"Usage across all runs: {u.get('runs')} runs, {u.get('llmRuns')} with Claude, ${float(u.get('costUsd') or 0):.2f} total.\n")
     lines.append("## GustavoAI tag mix\n")
     lines.append("| GustavoAI tag | Transactions |\n|---|---|")
     for k, v in res["tag_mix"].most_common():
@@ -291,7 +354,7 @@ def write_report(res, out, index, review_stats):
             lines.append(f"  - run {b['run']} account {b['account'] or '(default)'}: gap ${b['balance_gap']:.2f} (closing {b['closing_balance']}, expected {b['expected_closing']})")
     else:
         lines.append("- The run transactions carry no running balance field, so balances could not be reconciled from the GustavoAI data. Totals of credits and debits per account are in balances.csv.")
-    lines.append("\nFiles: per_run.csv, per_funder.csv, disagreements.csv, advances.csv, balances.csv, summary.json\n")
+    lines.append("\nFiles: per_run.csv, per_funder.csv, disagreements.csv, advances.csv, balances.csv, crosstab.csv, summary.json\n")
     with open(os.path.join(out, "report.md"), "w") as f:
         f.write("\n".join(lines))
 
@@ -309,10 +372,13 @@ def main():
     p = os.path.join(args.data, "runs_index.json")
     if os.path.exists(p):
         index = json.load(open(p))
-    review_stats = None
+    review_stats = usage = None
     p = os.path.join(args.data, "review_stats.json")
     if os.path.exists(p):
         review_stats = json.load(open(p))
+    p = os.path.join(args.data, "usage.json")
+    if os.path.exists(p):
+        usage = json.load(open(p))
     res = analyse(runs)
     write_csv(os.path.join(args.out, "per_run.csv"), res["per_run"])
     write_csv(os.path.join(args.out, "per_funder.csv"), [{"funder": k, **v} for k, v in res["per_funder"].items()], ["funder", "n", "agree", "oursOnly", "ocrOnly"])
@@ -321,10 +387,12 @@ def main():
     write_csv(os.path.join(args.out, "balances.csv"), res["balances"])
     summary = {
         "totals": dict(res["totals"]), "verdict_mix": dict(res["verdict_mix"]), "feedback": dict(res["feedback"]),
-        "tag_mix": dict(res["tag_mix"]), "confusion": {f"gustavo_mca={a},ocrolus_mca={b}": n for (a, b), n in res["confusion"].items()},
+        "tag_mix": dict(res["tag_mix"]), "ocrolus_tag_mix": dict(res["ocr_tag_mix"]), "possible_split": dict(res["possible_split"]),
+        "source_mix": dict(res["source_mix"]), "confusion": {f"gustavo_mca={a},ocrolus_mca={b}": n for (a, b), n in res["confusion"].items()},
     }
     json.dump(summary, open(os.path.join(args.out, "summary.json"), "w"), indent=1)
-    write_report(res, args.out, index, review_stats)
+    write_csv(os.path.join(args.out, "crosstab.csv"), [{"ocrolus_tag": o, "gustavo_tag": g, "n": n} for (o, g), n in sorted(res["crosstab"].items(), key=lambda kv: -kv[1])])
+    write_report(res, args.out, index, review_stats, usage)
     print(json.dumps(summary["totals"], indent=1))
 
 
