@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GustavoAI · Ocrolus comparison</title><link rel="stylesheet" href="/common.css">
+<style>
+  .cmp-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(380px,1fr)); gap:14px; }
+  .cmp-stat .n { font-size:20px; font-weight:700; } .cmp-stat .l { font-size:11.5px; color:var(--muted); }
+  .cmp-stat.ours .n { color:#2563eb; } .cmp-stat.ocr .n { color:#ea580c; } .cmp-stat.agree .n { color:var(--good); }
+  table.matrix td, table.matrix th { text-align:right; } table.matrix th:first-child, table.matrix td:first-child { text-align:left; }
+  table.matrix td.hot { background:#fff7ed; font-weight:600; } table.matrix td.ok { background:#f0fdf4; }
+  .legend { font-size:12px; color:var(--muted); margin-top:6px; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin:0 4px 0 10px; vertical-align:middle; }
+  .delta-pos { color:var(--good); } .delta-neg { color:var(--bad); }
+  .kind-ours_only { background:#dbeafe; color:#1e40af; } .kind-ocr_only { background:#ffedd5; color:#9a3412; } .kind-possible { background:#fef9c3; color:#854d0e; } .kind-revenue { background:#ede9fe; color:#5b21b6; }
+  .chip.kind-ours_only, .chip.kind-ocr_only, .chip.kind-possible, .chip.kind-revenue { border:0; }
+  .sticky-head thead th { position:sticky; top:0; background:#fff; z-index:1; }
+  .scroll { max-height:420px; overflow:auto; }
+  .note { font-size:12px; color:var(--muted); }
+  #report[hidden] { display:none; }
+</style></head>
+<body>
+<header><h1>GustavoAI</h1><nav class="top" id="nav"></nav><div class="status" id="status">checking…</div></header>
+<main class="single">
+  <div class="card">
+    <h2>GustavoAI vs Ocrolus <span class="muted" style="text-transform:none;letter-spacing:0">(built on demand from the application database)</span></h2>
+    <div class="toolbar">
+      <select id="f-scope" title="Which runs to compare"><option value="latest">latest run per opportunity</option><option value="all">every finished run</option></select>
+      <input type="text" id="f-opp" placeholder="opportunity id (optional)" style="max-width:220px">
+      <input type="text" id="f-funder" placeholder="funder contains…" style="max-width:180px">
+      <input type="date" id="f-since" style="max-width:170px" title="runs created on or after">
+      <input type="date" id="f-until" style="max-width:170px" title="runs created before">
+      <button id="f-build" class="primary" style="flex:0">Build report</button>
+      <button id="f-csv" style="flex:0" disabled>Download disagreements CSV</button>
+      <button id="f-json" style="flex:0" disabled>Download JSON</button>
+      <span id="f-status" class="muted"></span>
+    </div>
+    <div class="note">Each run re-tags the Ocrolus enriched transactions for one deal. "MCA" on the Ocrolus side means its <code>fintech_mca</code> flag; <code>bank_cash_advance</code> and the loan flags are shown separately. Revenue is credits minus financing deposits, transfers and returns; the two revenue figures differ only where GustavoAI and Ocrolus disagree on whether a deposit is an advance.</div>
+  </div>
+
+  <div id="report" hidden>
+    <div class="card">
+      <h2>Coverage</h2>
+      <div id="r-coverage"></div>
+    </div>
+
+    <div class="card">
+      <h2>MCA tagging</h2>
+      <div id="r-mca-stats"></div>
+      <div class="cmp-grid">
+        <div>
+          <h4 style="margin:6px 0">Verdict per transaction</h4>
+          <table id="r-verdicts"><thead><tr><th>Verdict</th><th class="num">Lines</th><th class="num">Amount</th><th style="width:40%"></th></tr></thead><tbody></tbody></table>
+          <table class="matrix" id="r-matrix" style="margin-top:12px"><thead><tr><th></th><th>Ocrolus: MCA</th><th>Ocrolus: not MCA</th></tr></thead><tbody></tbody></table>
+          <div class="note" id="r-possible"></div>
+        </div>
+        <div>
+          <h4 style="margin:6px 0">Ocrolus tag × GustavoAI tag <span class="muted">(lines)</span></h4>
+          <div class="scroll"><table class="matrix sticky-head" id="r-crosstab"><thead></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>By funder <span class="muted" style="text-transform:none;letter-spacing:0">(lines either system calls MCA, or GustavoAI calls possible)</span></h2>
+      <div class="scroll"><table class="sticky-head" id="r-funders"><thead><tr><th>Funder / counterparty</th><th class="num">Runs</th><th class="num">Lines</th><th class="num">GustavoAI MCA</th><th class="num">Ocrolus MCA</th><th class="num">Agree</th><th class="num">GustavoAI only</th><th class="num">Ocrolus only</th><th class="num">Possible</th><th class="num">Pulls $</th><th class="num">Marked wrong</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div class="card">
+      <h2>Revenue tagging <span class="muted" style="text-transform:none;letter-spacing:0">(deposits)</span></h2>
+      <div id="r-rev-stats"></div>
+      <div class="cmp-grid">
+        <div>
+          <h4 style="margin:6px 0">What each system takes out of revenue</h4>
+          <table id="r-rev-table"><thead><tr><th>Deposits excluded as…</th><th class="num">Ocrolus lines</th><th class="num">Ocrolus $</th><th class="num">GustavoAI lines</th><th class="num">GustavoAI $</th></tr></thead><tbody></tbody></table>
+          <div class="note">Transfers and returns come from Ocrolus's flags on both sides; GustavoAI does not tag those yet, so the only revenue difference is advance and loan deposits.</div>
+        </div>
+        <div>
+          <h4 style="margin:6px 0">Ocrolus deposit class × GustavoAI tag <span class="muted">(lines · $)</span></h4>
+          <div class="scroll"><table class="matrix sticky-head" id="r-dep-crosstab"><thead></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+      <h4 style="margin:12px 0 6px">Revenue by statement month</h4>
+      <div class="scroll"><table class="sticky-head" id="r-months"><thead><tr><th>Month</th><th class="num">Runs</th><th class="num">Deposits</th><th class="num">Gross credits</th><th class="num">Revenue per Ocrolus</th><th class="num">Revenue per GustavoAI</th><th class="num">Difference</th><th class="num">Deposits differing</th><th style="width:25%"></th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div class="card">
+      <h2>When a reviewer looked</h2>
+      <div id="r-review"></div>
+    </div>
+
+    <div class="card">
+      <h2>Per run</h2>
+      <div class="scroll"><table class="sticky-head" id="r-runs"><thead><tr><th>Run</th><th>Opportunity</th><th class="num">Lines</th><th class="num">GustavoAI MCA</th><th class="num">Ocrolus MCA</th><th class="num">Agree</th><th class="num">GustavoAI only</th><th class="num">Ocrolus only</th><th class="num">Possible</th><th class="num">Revenue (Ocrolus)</th><th class="num">Revenue (GustavoAI)</th><th class="num">Reviewed</th><th class="num">Wrong</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div class="card">
+      <h2>Disagreements <span id="r-dis-count" class="muted" style="text-transform:none;letter-spacing:0"></span></h2>
+      <div class="toolbar">
+        <select id="d-kind"><option value="">all kinds</option><option value="ours_only">GustavoAI MCA, Ocrolus not</option><option value="ocr_only">Ocrolus MCA, GustavoAI not</option><option value="possible">GustavoAI possible MCA</option><option value="revenue">deposit: advance vs revenue</option></select>
+        <select id="d-reviewed"><option value="">reviewed or not</option><option value="no">not reviewed</option><option value="yes">reviewed</option></select>
+        <input type="text" id="d-text" placeholder="description / funder contains…" style="max-width:240px">
+      </div>
+      <div class="txns scroll" style="max-height:560px"><table class="sticky-head" id="r-dis"><thead><tr><th>Run</th><th>Date</th><th>Description</th><th class="num">Amount</th><th>GustavoAI</th><th>Ocrolus</th><th>Kind</th><th>Reviewed</th></tr></thead><tbody></tbody></table></div>
+      <div class="note">Click a row to open the run in the Test view on that transaction, where you can mark it correct or wrong.</div>
+    </div>
+  </div>
+</main>
+<script src="/common.js"></script>
+<script>
+let report = null;
+const pct = (a, b) => b ? Math.round((a / b) * 100) + "%" : "–";
+const n0 = (v) => Number(v || 0).toLocaleString();
+const stat = (n, l, cls = "") => `<span class="stat cmp-stat ${cls}"><div class="n">${n}</div><div class="l">${l}</div></span>`;
+const KIND_LABEL = { ours_only: "GustavoAI only", ocr_only: "Ocrolus only", possible: "possible MCA", revenue: "deposit: advance vs revenue" };
+const OCR_NAME = (t) => (typeof OCR_LABEL === "object" && OCR_LABEL[t]) || t;
+
+function query() {
+  const q = new URLSearchParams();
+  q.set("scope", $("#f-scope").value);
+  for (const [k, id] of [["opportunityId", "#f-opp"], ["funder", "#f-funder"], ["since", "#f-since"], ["until", "#f-until"]]) { const v = $(id).value.trim(); if (v) q.set(k, v); }
+  q.set("limit", "5000");
+  return q;
+}
+
+async function build() {
+  $("#f-status").innerHTML = '<span class="spinner"></span> building…';
+  $("#f-build").disabled = true;
+  try {
+    report = await api("/api/compare?" + query());
+    render(report);
+    $("#report").hidden = false;
+    $("#f-csv").disabled = $("#f-json").disabled = false;
+    $("#f-status").textContent = `built ${new Date(report.generatedAt).toLocaleTimeString()}`;
+    history.replaceState(null, "", "#" + query().toString());
+  } catch (e) { $("#f-status").innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+  finally { $("#f-build").disabled = false; }
+}
+
+function render(r) {
+  const c = r.runs, m = r.mca, v = r.revenue, rv = r.review;
+  $("#r-coverage").innerHTML = stat(n0(c.runs), "runs compared") + stat(n0(c.opportunities), "opportunities") + stat(n0(m.lines), "transactions") + stat(n0(v.deposits), "deposits")
+    + stat(c.first_run ? esc(String(c.first_run).slice(0, 10)) : "–", "first run") + stat(c.last_run ? esc(String(c.last_run).slice(0, 10)) : "–", "last run")
+    + `<div class="note">Scope: ${r.query.scope === "all" ? "every finished run" : "the latest finished run per opportunity"}${r.query.opportunityId ? ", opportunity " + esc(r.query.opportunityId) : ""}${r.query.funder ? ", funder contains “" + esc(r.query.funder) + "”" : ""}${r.query.since ? ", runs since " + esc(r.query.since) : ""}${r.query.until ? ", before " + esc(r.query.until) : ""}.</div>`;
+
+  const either = m.agree + m.ours_only + m.ocr_only;
+  $("#r-mca-stats").innerHTML = stat(n0(m.ours_mca), "GustavoAI MCA lines", "ours") + stat(n0(m.ocr_mca), "Ocrolus MCA lines", "ocr") + stat(n0(m.agree), "both say MCA", "agree")
+    + stat(pct(m.agree, either), "overlap (agree ÷ either)") + stat(pct(m.agree, m.agree + m.ocr_only), "of Ocrolus MCA, GustavoAI agrees") + stat(pct(m.agree, m.agree + m.ours_only), "of GustavoAI MCA, Ocrolus agrees")
+    + stat(usd(m.ours_pull_total), "pulls $ per GustavoAI", "ours") + stat(usd(m.ocr_pull_total), "pulls $ per Ocrolus", "ocr") + stat(n0(m.claude_changed), "lines where Claude changed the rules tag");
+
+  const max = Math.max(1, ...r.verdicts.map((x) => x.n));
+  $("#r-verdicts tbody").innerHTML = r.verdicts.map((x) => `<tr><td>${VERDICT_LABEL[x.verdict] ? `<span class="chip v-${x.verdict}">${VERDICT_LABEL[x.verdict]}</span>` : esc(x.verdict)}</td><td class="num">${n0(x.n)}</td><td class="num">${usd(x.amount)}</td><td><div class="bar"><i style="width:${Math.round((x.n / max) * 100)}%"></i></div></td></tr>`).join("");
+  $("#r-matrix tbody").innerHTML = `<tr><th>GustavoAI: MCA</th><td class="ok">${n0(m.agree)}</td><td class="hot">${n0(m.ours_only)}</td></tr><tr><th>GustavoAI: not MCA</th><td class="hot">${n0(m.ocr_only + m.possible_ocr_mca)}</td><td class="ok">${n0(m.neither)}</td></tr>`;
+  $("#r-possible").textContent = m.possible ? `${n0(m.possible)} lines are GustavoAI "possible MCA" (not counted as agreement): Ocrolus flags ${n0(m.possible_ocr_mca)} of them as MCA and ${n0(m.possible - m.possible_ocr_mca)} not.` : "No lines left as possible MCA.";
+
+  renderCrosstab("#r-crosstab", r.crosstab, "ocr_tag", "our_tag", (x) => OCR_NAME(x), (x) => x, (cell) => n0(cell.n));
+  renderCrosstab("#r-dep-crosstab", r.depositCrosstab, "ocr_class", "our_tag", (x) => x, (x) => x, (cell) => `${n0(cell.n)} · ${usd(cell.amount)}`);
+
+  $("#r-funders tbody").innerHTML = r.funders.map((f) => `<tr><td>${esc(f.funder)}</td><td class="num">${n0(f.runs)}</td><td class="num">${n0(f.n)}</td><td class="num" style="color:#2563eb">${n0(f.ours_mca)}</td><td class="num" style="color:#ea580c">${n0(f.ocr_mca)}</td><td class="num ok">${n0(f.agree)}</td><td class="num" style="color:#2563eb">${n0(f.ours_only)}</td><td class="num" style="color:#ea580c">${n0(f.ocr_only)}</td><td class="num">${n0(f.possible)}</td><td class="num">${usd(f.pull_total)}</td><td class="num" style="color:var(--bad)">${n0(f.wrong)}</td></tr>`).join("") || '<tr><td colspan="11" class="muted">no MCA lines in this scope</td></tr>';
+
+  const diff = v.ours_revenue - v.ocr_revenue;
+  $("#r-rev-stats").innerHTML = stat(usd(v.credits), "gross credits") + stat(usd(v.ocr_revenue), "revenue per Ocrolus", "ocr") + stat(usd(v.ours_revenue), "revenue per GustavoAI", "ours")
+    + stat(`<span class="${diff < 0 ? "delta-neg" : diff > 0 ? "delta-pos" : ""}">${diff > 0 ? "+" : ""}${usd(diff)}</span>`, "difference (GustavoAI − Ocrolus)")
+    + stat(n0(v.ours_only_financing_n), "deposits only GustavoAI calls an advance", "ours") + stat(n0(v.ocr_only_financing_n), "deposits only Ocrolus calls financing", "ocr") + stat(n0(v.both_financing_n), "deposits both call financing", "agree");
+  $("#r-rev-table tbody").innerHTML = [
+    ["Advance / loan deposits", v.ocr_financing_n, v.ocr_financing_amt, v.ours_financing_n, v.ours_financing_amt],
+    ["Returned / reversed credits", v.return_n, v.return_amt, v.ours_return_n, v.ours_return_amt],
+    ["Internal transfers (Ocrolus flag, used by both)", v.transfer_n, v.transfer_amt, v.transfer_n, v.transfer_amt],
+  ].map(([l, a, b, c2, d]) => `<tr><td>${l}</td><td class="num">${n0(a)}</td><td class="num">${usd(b)}</td><td class="num">${n0(c2)}</td><td class="num">${usd(d)}</td></tr>`).join("")
+    + `<tr><th>Revenue</th><td class="num"></td><th class="num">${usd(v.ocr_revenue)}</th><td class="num"></td><th class="num">${usd(v.ours_revenue)}</th></tr>`;
+  const mmax = Math.max(1, ...r.revenueByMonth.map((x) => Math.abs(x.ours_revenue - x.ocr_revenue)));
+  $("#r-months tbody").innerHTML = r.revenueByMonth.map((x) => { const d = x.ours_revenue - x.ocr_revenue; return `<tr><td>${esc(x.month)}</td><td class="num">${n0(x.runs)}</td><td class="num">${n0(x.deposits)}</td><td class="num">${usd(x.credits)}</td><td class="num">${usd(x.ocr_revenue)}</td><td class="num">${usd(x.ours_revenue)}</td><td class="num ${d < 0 ? "delta-neg" : d > 0 ? "delta-pos" : ""}">${d > 0 ? "+" : ""}${usd(d)}</td><td class="num">${n0(x.differing)}</td><td><div class="bar"><i style="width:${Math.round((Math.abs(d) / mmax) * 100)}%;background:${d < 0 ? "var(--bad)" : "var(--good)"}"></i></div></td></tr>`; }).join("") || '<tr><td colspan="9" class="muted">no deposits in this scope</td></tr>';
+
+  $("#r-review").innerHTML = rv.reviewed
+    ? stat(n0(rv.reviewed), "lines reviewed") + stat(n0(rv.ours_confirmed), "GustavoAI tag confirmed", "agree") + stat(n0(rv.ours_corrected), "GustavoAI tag corrected")
+      + stat(pct(rv.ours_mca_right, rv.reviewed), "GustavoAI right on MCA / not", "ours") + stat(pct(rv.ocr_mca_right, rv.reviewed), "Ocrolus right on MCA / not", "ocr")
+      + stat(n0(rv.disputed_reviewed), "reviewed lines where they disagreed") + stat(n0(rv.disputed_ours_right), "…GustavoAI was right", "ours") + stat(n0(rv.disputed_ocr_right), "…Ocrolus was right", "ocr")
+      + `<div class="note">The reviewer's call is the confirmed tag, or the corrected tag when a line was marked wrong. A line counts as MCA for either system when its tag is an MCA pull, deposit or return.</div>`
+    : '<span class="muted">No reviewer feedback on these runs yet. Open a disagreement below and mark it in the Test view to start adjudicating.</span>';
+
+  $("#r-runs tbody").innerHTML = r.perRun.map((x) => `<tr style="cursor:pointer" onclick="openRunModal('${esc(x.run_id)}')"><td style="white-space:nowrap"><div>${esc(String(x.run_at).slice(0, 16).replace("T", " "))}</div><div class="muted" style="font-size:10.5px">${esc(x.source_label || "")}</div></td><td>${esc(x.opportunity_id || "")}</td><td class="num">${n0(x.lines)}</td><td class="num" style="color:#2563eb">${n0(x.ours_mca)}</td><td class="num" style="color:#ea580c">${n0(x.ocr_mca)}</td><td class="num ok">${n0(x.agree)}</td><td class="num">${n0(x.ours_only)}</td><td class="num">${n0(x.ocr_only)}</td><td class="num">${n0(x.possible)}</td><td class="num">${usd(x.ocr_revenue)}</td><td class="num">${usd(x.ours_revenue)}</td><td class="num">${n0(x.reviewed)}</td><td class="num" style="color:var(--bad)">${n0(x.wrong)}</td></tr>`).join("");
+
+  renderDisagreements();
+}
+
+function renderCrosstab(sel, rows, rowKey, colKey, rowName, colName, cell) {
+  const rowTot = {}, colTot = {}, grid = {};
+  for (const x of rows) { rowTot[x[rowKey]] = (rowTot[x[rowKey]] || 0) + x.n; colTot[x[colKey]] = (colTot[x[colKey]] || 0) + x.n; grid[x[rowKey] + "\u0000" + x[colKey]] = x; }
+  const rowsO = Object.keys(rowTot).sort((a, b) => rowTot[b] - rowTot[a]), colsO = Object.keys(colTot).sort((a, b) => colTot[b] - colTot[a]);
+  $(sel + " thead").innerHTML = `<tr><th>Ocrolus ↓ · GustavoAI →</th>${colsO.map((c) => `<th>${esc(colName(c))}</th>`).join("")}<th>total</th></tr>`;
+  $(sel + " tbody").innerHTML = rowsO.map((rk) => `<tr><th>${esc(rowName(rk))}</th>${colsO.map((ck) => { const g = grid[rk + "\u0000" + ck]; const mcaRow = rk === "mca" || rk === "financing"; const mcaCol = /^mca_|^non_cash_advance_deposit$/.test(ck); const cls = !g ? "" : (mcaRow && mcaCol) || (!mcaRow && !mcaCol && !/^possible/.test(ck)) ? "ok" : "hot"; return `<td class="${cls}">${g ? cell(g) : ""}</td>`; }).join("")}<td>${n0(rowTot[rk])}</td></tr>`).join("") + `<tr><th>total</th>${colsO.map((c) => `<td>${n0(colTot[c])}</td>`).join("")}<td>${n0(rows.reduce((s, x) => s + x.n, 0))}</td></tr>`;
+}
+
+function disagreementRows() {
+  if (!report) return [];
+  const kind = $("#d-kind").value, rev = $("#d-reviewed").value, text = $("#d-text").value.trim().toLowerCase();
+  return report.disagreements.filter((d) => (!kind || d.kind === kind) && (rev !== "yes" || d.reviewed_correct != null) && (rev !== "no" || d.reviewed_correct == null)
+    && (!text || [d.description, d.funder, d.counterparty, d.ocr_counterparty, d.ocr_source].some((s) => (s || "").toLowerCase().includes(text))));
+}
+function renderDisagreements() {
+  const rows = disagreementRows();
+  $("#r-dis-count").textContent = `(${rows.length} of ${report.disagreements.length})`;
+  $("#r-dis tbody").innerHTML = rows.slice(0, 1500).map((d) => `<tr data-run="${esc(d.run_id)}" data-txn="${esc(d.txn_id)}" style="cursor:pointer" title="${esc(d.reason || "")}">
+    <td class="muted" style="font-size:11px;white-space:nowrap">${esc(String(d.run_at).slice(0, 10))}<br>${esc(d.opportunity_id || d.source_label || "")}</td>
+    <td style="white-space:nowrap">${esc(String(d.txn_date).slice(0, 10))}</td><td>${esc(d.description)}</td>
+    <td class="num ${d.type === "debit" ? "neg" : "pos"}">${usd(d.type === "debit" ? -Number(d.amount) : Number(d.amount))}</td>
+    <td><span class="chip tag-${esc(d.tag || "")}">${esc(d.tag || "untagged")}</span><div class="muted" style="font-size:10.5px">${esc(d.funder && d.funder !== "No Advance" ? d.funder : (d.counterparty || ""))}${d.source ? " · " + esc(d.source) : ""}</div></td>
+    <td>${d.ocr_tag ? `<span class="chip ${d.ocr_tag === "mca" ? "tag-mca_pull" : ""}">${esc(OCR_NAME(d.ocr_tag))}</span>` : '<span class="muted">no flag</span>'}<div class="muted" style="font-size:10.5px">${esc(d.ocr_source || d.ocr_counterparty || "")}</div></td>
+    <td><span class="chip kind-${esc(d.kind)}">${KIND_LABEL[d.kind] || esc(d.kind)}</span></td>
+    <td>${d.reviewed_correct == null ? '<span class="muted">—</span>' : d.reviewed_correct ? '<span class="fb-mark ok">✓ correct</span>' : `<span class="fb-mark bad">✗ ${esc(d.corrected_tag || "wrong")}</span>`}${d.review_note ? `<div class="muted" style="font-size:10.5px">${esc(d.review_note)}</div>` : ""}</td></tr>`).join("");
+  document.querySelectorAll("#r-dis tbody tr").forEach((tr) => tr.onclick = () => { location.href = "/#run=" + encodeURIComponent(tr.dataset.run) + "&txn=" + encodeURIComponent(tr.dataset.txn); });
+}
+
+function download(name, text, type) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+const csvCell = (v) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+$("#f-csv").onclick = () => {
+  const cols = ["run_id", "run_at", "opportunity_id", "txn_id", "txn_date", "description", "amount", "type", "account", "kind", "tag", "funder", "counterparty", "source", "reason", "ocr_tag", "ocr_source", "ocr_counterparty", "ocr_mca", "reviewed_correct", "corrected_tag", "reviewer", "review_note"];
+  download("gustavoai-vs-ocrolus-disagreements.csv", [cols.join(",")].concat(disagreementRows().map((d) => cols.map((c) => csvCell(d[c])).join(","))).join("\n"), "text/csv");
+};
+$("#f-json").onclick = () => download("gustavoai-vs-ocrolus-report.json", JSON.stringify(report, null, 1), "application/json");
+$("#f-build").onclick = build;
+["#d-kind", "#d-reviewed"].forEach((id) => $(id).onchange = renderDisagreements);
+$("#d-text").oninput = renderDisagreements;
+document.addEventListener("DOMContentLoaded", async () => {
+  const h = await loadHealth();
+  if (h && !h.appDb) { $("#f-status").innerHTML = '<span class="err">The application database is not configured (DATABASE_URL); this report needs it.</span>'; $("#f-build").disabled = true; return; }
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
+  if (hash.get("scope")) $("#f-scope").value = hash.get("scope");
+  for (const [k, id] of [["opportunityId", "#f-opp"], ["funder", "#f-funder"], ["since", "#f-since"], ["until", "#f-until"]]) if (hash.get(k)) $(id).value = hash.get(k);
+  if (hash.toString()) build();
+});
+</script>
+</body></html>
